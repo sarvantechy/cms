@@ -18,6 +18,10 @@ One hosted application can serve many colleges. Each college is a separate **ten
 | [Business Workflows](docs/04-business-workflows.md) | Everyone | Correct end-to-end operational flows |
 | [Multi-Tenant Architecture](docs/05-multi-tenant-architecture.md) | Developers and technical reviewers | Application, data, security, and integration design |
 | [Implementation Roadmap](docs/06-implementation-roadmap.md) | Product and delivery teams | Module order, releases, dependencies, and completion criteria |
+| [Demo Scope and Experience](docs/07-demo-scope-and-experience.md) | Everyone | Exact scope, users, screens, and boundaries of the first demo |
+| [Demo Implementation Plan](docs/08-demo-implementation-plan.md) | Product and development teams | Build sequence, acceptance criteria, tests, and demo walkthrough |
+| [Multi-Tenant Demo Decision](docs/09-multi-tenant-demo-decision.md) | Product and development teams | Tenant identity, isolation, switching, branding, and seed strategy |
+| [Implementation Status](docs/implementation-status.md) | Everyone | Current implementation state, limitations, validation, and next review gate |
 
 ## Proposed First Release
 
@@ -35,6 +39,12 @@ The first useful release will include:
 10. Notices and essential management reports
 
 Library, hostel, transport, placement, activities, complete HR/payroll, and full accounting will follow after the academic core is stable.
+
+## Current Delivery Focus
+
+Before building the complete first release, the project will deliver a smaller working demo for two college tenants: **INDUS ARTS & SCIENCE INTERNATIONAL COLLEGE** and **INDUS LAW COLLEGE**. The demo will prove tenant isolation and show connected student, academic, attendance, fee, notice, and dashboard workflows using realistic sample data.
+
+The exact demo boundary is defined in [Demo Scope and Experience](docs/07-demo-scope-and-experience.md). The step-by-step build sequence is defined in [Demo Implementation Plan](docs/08-demo-implementation-plan.md).
 
 ## Guiding Principles
 
