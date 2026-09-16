@@ -1,4 +1,4 @@
-import { useState, type ComponentType } from "react";
+import { useEffect, useState, type ComponentType } from "react";
 import {
   ArrowRight,
   Bell,
@@ -10,6 +10,7 @@ import {
   CircleUserRound,
   ClipboardCheck,
   Clock3,
+  FileUp,
   GraduationCap,
   IndianRupee,
   LayoutDashboard,
@@ -29,10 +30,26 @@ import {
   UsersRound,
   X,
 } from "lucide-react";
-import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { Link, Navigate, NavLink, Route, Routes, useNavigate } from "react-router-dom";
+import {
+  authenticationErrorMessage,
+  clearSession,
+  getSelectableMemberships,
+  login,
+  logout,
+  restoreSession,
+  switchTenant,
+  type SelectableMembership,
+  type SessionIdentity,
+  type TokenResponse,
+} from "./api";
+import AcademicMasters from "./AcademicMasters";
+import ApplicantPortal from "./ApplicantPortal";
+import OperationalModules from "./OperationalModules";
+import PlatformAdministration from "./PlatformAdministration";
 
 type TenantKey = "indus-arts-science" | "indus-law";
-type RoleKey = "admin" | "student" | "parent" | "faculty" | "hod" | "event";
+type RoleKey = "admin" | "applicant" | "student" | "parent" | "faculty" | "hod" | "accountant" | "examination" | "admission" | "event";
 type Theme = "campus" | "scholar" | "contrast";
 type Icon = ComponentType<{ "aria-hidden"?: boolean }>;
 
@@ -45,6 +62,12 @@ type DemoAccount = {
   initials: string;
 };
 
+type PortalSession = DemoAccount & {
+  accountId: string;
+  membershipId: string;
+  permissions: string[];
+};
+
 type Tenant = {
   key: TenantKey;
   name: string;
@@ -55,7 +78,7 @@ type Tenant = {
   programs: string[];
 };
 
-const DEMO_PASSWORD = "Demo@123";
+const DEMO_PASSWORD = "Demo@1234567";
 
 const tenants: Record<TenantKey, Tenant> = {
   "indus-arts-science": {
@@ -79,31 +102,43 @@ const tenants: Record<TenantKey, Tenant> = {
 };
 
 const demoAccounts: DemoAccount[] = [
-  { role: "admin", roleLabel: "Administrator", name: "Anita Kumar", email: "admin@indus.demo", tenant: "indus-arts-science", initials: "AK" },
-  { role: "student", roleLabel: "Student", name: "Nila Raj", email: "student@indus.demo", tenant: "indus-arts-science", initials: "NR" },
-  { role: "parent", roleLabel: "Parent", name: "Ravi Raj", email: "parent@indus.demo", tenant: "indus-arts-science", initials: "RR" },
-  { role: "faculty", roleLabel: "Faculty", name: "Dr. Meera Nair", email: "faculty@indus.demo", tenant: "indus-arts-science", initials: "MN" },
-  { role: "hod", roleLabel: "Head of Department", name: "Dr. Arul Prakash", email: "hod@indus.demo", tenant: "indus-arts-science", initials: "AP" },
-  { role: "event", roleLabel: "Event Coordinator", name: "Kavya S", email: "events@indus.demo", tenant: "indus-arts-science", initials: "KS" },
+  { role: "admin", roleLabel: "College Administrator", name: "Arts & Science Administrator", email: "admin@indus.demo", tenant: "indus-arts-science", initials: "AA" },
+  { role: "admin", roleLabel: "College Administrator", name: "Law College Administrator", email: "admin@indus-law.demo", tenant: "indus-law", initials: "LA" },
+  { role: "applicant", roleLabel: "Applicant", name: "Demo Applicant", email: "applicant.indus-arts-science@demo.4by4.local", tenant: "indus-arts-science", initials: "DA" },
+  { role: "student", roleLabel: "Student", name: "Demo Student", email: "student.indus-arts-science@demo.4by4.local", tenant: "indus-arts-science", initials: "DS" },
+  { role: "parent", roleLabel: "Parent/Guardian", name: "Demo Parent", email: "guardian.indus-arts-science@demo.4by4.local", tenant: "indus-arts-science", initials: "DP" },
+  { role: "faculty", roleLabel: "Faculty", name: "Demo Faculty", email: "faculty.indus-arts-science@demo.4by4.local", tenant: "indus-arts-science", initials: "DF" },
+  { role: "hod", roleLabel: "Head of Department", name: "Demo HOD", email: "hod@indus.demo", tenant: "indus-arts-science", initials: "DH" },
+  { role: "accountant", roleLabel: "Accountant/Cashier", name: "Demo Accountant", email: "accountant@indus.demo", tenant: "indus-arts-science", initials: "DA" },
+  { role: "examination", roleLabel: "Examination Controller", name: "Demo Examination Controller", email: "exams@indus.demo", tenant: "indus-arts-science", initials: "DE" },
+  { role: "admission", roleLabel: "Admission Officer", name: "Demo Admission Officer", email: "admissions@indus.demo", tenant: "indus-arts-science", initials: "DO" },
+  { role: "event", roleLabel: "Activity Coordinator", name: "Demo Activity Coordinator", email: "activities@indus.demo", tenant: "indus-arts-science", initials: "DC" },
 ];
 
 const roleIcons: Record<RoleKey, Icon> = {
   admin: ShieldCheck,
+  applicant: FileUp,
   student: GraduationCap,
   parent: UsersRound,
   faculty: BookOpen,
   hod: School,
+  accountant: IndianRupee,
+  examination: ReceiptText,
+  admission: School,
   event: CalendarDays,
 };
 
 const roleNavigation: Record<RoleKey, { label: string; items: { to: string; label: string; icon: Icon }[] }[]> = {
   admin: [
-    { label: "Overview", items: [{ to: "/portal/dashboard", label: "Dashboard", icon: LayoutDashboard }, { to: "/portal/notices", label: "Notices", icon: Bell }] },
-    { label: "People", items: [{ to: "/portal/students", label: "Students", icon: GraduationCap }, { to: "/portal/faculty", label: "Faculty", icon: UsersRound }] },
-    { label: "Operations", items: [{ to: "/portal/academics", label: "Academics", icon: BookOpen }, { to: "/portal/attendance", label: "Attendance", icon: ClipboardCheck }, { to: "/portal/fees", label: "Fees", icon: IndianRupee }, { to: "/portal/events", label: "Events", icon: CalendarDays }] },
+    { label: "Overview", items: [{ to: "/portal/dashboard", label: "Dashboard", icon: LayoutDashboard }, { to: "/portal/access", label: "Access", icon: ShieldCheck }] },
+    { label: "People", items: [{ to: "/portal/admissions", label: "Admissions", icon: School }, { to: "/portal/students", label: "Students", icon: GraduationCap }, { to: "/portal/faculty", label: "Faculty", icon: UsersRound }] },
+    { label: "Operations", items: [{ to: "/portal/academics", label: "Academics", icon: BookOpen }, { to: "/portal/timetable", label: "Timetable", icon: Clock3 }, { to: "/portal/attendance", label: "Attendance", icon: ClipboardCheck }, { to: "/portal/fees", label: "Fees", icon: IndianRupee }, { to: "/portal/examinations", label: "Examinations", icon: ReceiptText }, { to: "/portal/notices", label: "Notices", icon: Bell }, { to: "/portal/events", label: "Events", icon: CalendarDays }] },
+  ],
+  applicant: [
+    { label: "Admissions", items: [{ to: "/portal/applicant", label: "My application", icon: FileUp }] },
   ],
   student: [
-    { label: "My College", items: [{ to: "/portal/dashboard", label: "My dashboard", icon: LayoutDashboard }, { to: "/portal/timetable", label: "Timetable", icon: Clock3 }, { to: "/portal/attendance", label: "Attendance", icon: ClipboardCheck }, { to: "/portal/fees", label: "Fees & receipts", icon: ReceiptText }, { to: "/portal/events", label: "Events", icon: Trophy }] },
+    { label: "My College", items: [{ to: "/portal/dashboard", label: "My dashboard", icon: LayoutDashboard }, { to: "/portal/timetable", label: "Timetable", icon: Clock3 }, { to: "/portal/attendance", label: "Attendance", icon: ClipboardCheck }, { to: "/portal/fees", label: "Fees & receipts", icon: ReceiptText }, { to: "/portal/examinations", label: "Results", icon: GraduationCap }, { to: "/portal/notices", label: "Notices", icon: Bell }, { to: "/portal/events", label: "Events", icon: Trophy }] },
   ],
   parent: [
     { label: "My Student", items: [{ to: "/portal/dashboard", label: "Progress summary", icon: LayoutDashboard }, { to: "/portal/attendance", label: "Attendance", icon: ClipboardCheck }, { to: "/portal/fees", label: "Fees & receipts", icon: ReceiptText }, { to: "/portal/notices", label: "College notices", icon: Bell }] },
@@ -114,21 +149,108 @@ const roleNavigation: Record<RoleKey, { label: string; items: { to: string; labe
   hod: [
     { label: "Department", items: [{ to: "/portal/dashboard", label: "HOD dashboard", icon: LayoutDashboard }, { to: "/portal/faculty", label: "Faculty workload", icon: UsersRound }, { to: "/portal/students", label: "Department students", icon: GraduationCap }, { to: "/portal/attendance", label: "Attendance review", icon: ClipboardCheck }, { to: "/portal/academics", label: "Academic progress", icon: BookOpen }] },
   ],
+  accountant: [
+    { label: "Finance", items: [{ to: "/portal/dashboard", label: "Finance dashboard", icon: LayoutDashboard }, { to: "/portal/fees", label: "Fees & payments", icon: IndianRupee }, { to: "/portal/students", label: "Student accounts", icon: GraduationCap }] },
+  ],
+  examination: [
+    { label: "Examinations", items: [{ to: "/portal/dashboard", label: "Controller dashboard", icon: LayoutDashboard }, { to: "/portal/examinations", label: "Exams & results", icon: ReceiptText }, { to: "/portal/students", label: "Candidates", icon: GraduationCap }, { to: "/portal/notices", label: "Result notices", icon: Bell }] },
+  ],
+  admission: [
+    { label: "Admissions", items: [{ to: "/portal/dashboard", label: "Admissions dashboard", icon: LayoutDashboard }, { to: "/portal/admissions", label: "Applications", icon: School }, { to: "/portal/notices", label: "Applicant notices", icon: Megaphone }] },
+  ],
   event: [
     { label: "Campus Life", items: [{ to: "/portal/dashboard", label: "Event dashboard", icon: LayoutDashboard }, { to: "/portal/events", label: "Events", icon: CalendarDays }, { to: "/portal/participants", label: "Participants", icon: UsersRound }, { to: "/portal/notices", label: "Announcements", icon: Megaphone }] },
   ],
 };
 
 function PortalApp() {
-  const [session, setSession] = useState<DemoAccount | null>(null);
+  const [session, setSession] = useState<PortalSession | null>(null);
+  const [restoring, setRestoring] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    restoreSession().then((restored) => {
+      if (!active) return;
+      if (restored) {
+        const account = demoAccounts.find(
+          (item) => item.tenant === restored.identity.tenantKey && item.email === restored.identity.email,
+        );
+        if (isTenantKey(restored.identity.tenantKey)) {
+          try {
+            setSession(createPortalSession(restored.identity, restored.authentication, account));
+          } catch {
+            clearSession();
+          }
+        } else {
+          clearSession();
+        }
+      }
+      setRestoring(false);
+    });
+    return () => { active = false; };
+  }, []);
+
+  if (restoring) {
+    return <main className="portal-loading" aria-live="polite">Restoring secure session...</main>;
+  }
+
+  /** Revoke the backend session before removing the authenticated shell. */
+  const endSession = async () => {
+    try {
+      await logout();
+    } finally {
+      setSession(null);
+    }
+  };
+
   return (
     <Routes>
       <Route path="/" element={<PublicHome />} />
       <Route path="/login" element={<LoginPage onLogin={setSession} />} />
-      <Route path="/portal/*" element={session ? <PortalShell session={session} onLogout={() => setSession(null)} /> : <Navigate to="/login" replace />} />
+      <Route path="/platform/*" element={<PlatformAdministration />} />
+      <Route path="/portal/*" element={session ? <PortalShell session={session} onLogout={endSession} onSessionChange={setSession} /> : <Navigate to="/login" replace />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
+}
+
+/** Build a portal session from backend-authorized role and permission claims. */
+function createPortalSession(identity: SessionIdentity, authentication: TokenResponse, account?: DemoAccount): PortalSession {
+  if (!isTenantKey(identity.tenantKey)) {
+    throw new Error("The authenticated tenant has no configured portal theme");
+  }
+  const role = resolvePortalRole(authentication.actor.role_keys);
+  if (!role) {
+    throw new Error("The authenticated role does not have an implemented portal workspace");
+  }
+  const name = account?.name ?? identity.email.split("@")[0].replaceAll(/[._-]/g, " ");
+  return {
+    role,
+    roleLabel: roleLabels[role],
+    name,
+    email: identity.email,
+    tenant: identity.tenantKey,
+    initials: account?.initials ?? name.split(" ").filter(Boolean).slice(0, 2).map((part) => part[0].toUpperCase()).join(""),
+    accountId: authentication.actor.account_id,
+    membershipId: authentication.actor.membership_id,
+    permissions: authentication.actor.permissions,
+  };
+}
+
+const roleLabels: Record<RoleKey, string> = { admin: "College Administrator", applicant: "Applicant", student: "Student", parent: "Parent/Guardian", faculty: "Faculty", hod: "Head of Department", accountant: "Accountant/Cashier", examination: "Examination Controller", admission: "Admission Officer", event: "Activity Coordinator" };
+
+/** Resolve the highest-priority implemented portal role from actor claims. */
+function resolvePortalRole(roleKeys: string[]): RoleKey | null {
+  const mapping: Array<[string, RoleKey]> = [["college_administrator", "admin"], ["head_of_department", "hod"], ["examination_controller", "examination"], ["accountant_cashier", "accountant"], ["admission_officer", "admission"], ["activity_coordinator", "event"], ["faculty", "faculty"], ["parent_guardian", "parent"], ["applicant", "applicant"], ["student", "student"]];
+  return mapping.find(([key]) => roleKeys.includes(key))?.[1] ?? null;
+}
+
+const routePermissions: Record<string, string> = { "/portal/access": "identity.accounts.read", "/portal/admissions": "admissions.applications.read", "/portal/applicant": "admissions.applications.own", "/portal/students": "students.records.read", "/portal/faculty": "faculty.records.read", "/portal/academics": "academics.settings.read", "/portal/timetable": "timetable.read", "/portal/attendance": "attendance.student.read", "/portal/fees": "fees.records.read", "/portal/examinations": "examinations.results.read", "/portal/notices": "communications.notices.read", "/portal/events": "activities.records.read" };
+
+/** Return whether an actor can open a source-backed portal route. */
+function canOpenRoute(path: string, permissions: string[]): boolean {
+  const permission = routePermissions[path];
+  return path === "/portal/dashboard" || permission === undefined || permissions.includes(permission) || (path === "/portal/notices" && permissions.includes("communications.notices.manage"));
 }
 
 function PublicHome() {
@@ -172,97 +294,94 @@ function PublicHome() {
   );
 }
 
-function LoginPage({ onLogin }: Readonly<{ onLogin: (account: DemoAccount) => void }>) {
+function LoginPage({ onLogin }: Readonly<{ onLogin: (session: PortalSession) => void }>) {
   const navigate = useNavigate();
   const [selectedEmail, setSelectedEmail] = useState(demoAccounts[0].email);
+  const [selectedTenant, setSelectedTenant] = useState<TenantKey>(demoAccounts[0].tenant);
   const [password, setPassword] = useState(DEMO_PASSWORD);
   const [error, setError] = useState("");
-  const selected = demoAccounts.find((account) => account.email === selectedEmail) ?? demoAccounts[0];
-  const submit = (event: React.SubmitEvent<HTMLFormElement>) => {
+  const [submitting, setSubmitting] = useState(false);
+  const selected = demoAccounts.find((account) => account.email === selectedEmail && account.tenant === selectedTenant);
+  const submit = async (event: React.SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (password !== DEMO_PASSWORD) { setError("Use the temporary demo password shown below."); return; }
-    onLogin(selected); navigate("/portal/dashboard");
+    setError("");
+    setSubmitting(true);
+    try {
+      const identity: SessionIdentity = { tenantKey: selectedTenant, email: selectedEmail };
+      const authentication = await login(identity, password);
+      onLogin(createPortalSession(identity, authentication, selected));
+      navigate("/portal/dashboard");
+    } catch (loginError) {
+      try {
+        await logout();
+      } catch {
+        clearSession();
+      }
+      setError(authenticationErrorMessage(loginError));
+    } finally {
+      setSubmitting(false);
+    }
   };
   return (
     <main className="login-page">
       <section className="login-identity"><Link to="/" className="login-back">← College website</Link><div><span className="login-monogram">IA</span><p>INDUS COLLEGE PORTAL</p><h1>One campus.<br />Every connection.</h1><p className="login-copy">Academic and campus information for students, parents, faculty and college teams.</p></div><small>Demo environment · Synthetic records only</small></section>
-      <section className="login-panel"><div className="login-card"><header><p>WELCOME TO INDUS</p><h2>Sign in to your workspace</h2><span>Select a sample role to explore its dashboard and permissions.</span></header><form onSubmit={submit}><label>Sample account<select value={selectedEmail} onChange={(event) => { setSelectedEmail(event.target.value); setError(""); }}>{demoAccounts.map((account) => <option key={account.email} value={account.email}>{account.roleLabel} · {account.name}</option>)}</select><ChevronDown aria-hidden /></label><label>Email<input value={selectedEmail} readOnly /></label><label>Password<div className="password-field"><LockKeyhole aria-hidden /><input type="text" value={password} onChange={(event) => setPassword(event.target.value)} /></div></label>{error && <p className="login-error">{error}</p>}<button type="submit">Sign in as {selected.roleLabel}<ArrowRight aria-hidden /></button></form><div className="selected-account"><div><strong>{selected.name}</strong><span>{selected.roleLabel} · {tenants[selected.tenant].shortName}</span></div><CheckCircle2 aria-hidden /></div></div><section className="demo-credentials"><header><div><p>DEMO ACCESS</p><h2>Sample login details</h2></div><span>Shared password: <strong>{DEMO_PASSWORD}</strong></span></header><div>{demoAccounts.map((account) => { const RoleIcon = roleIcons[account.role]; return <button key={account.email} type="button" className={selectedEmail === account.email ? "active" : ""} onClick={() => { setSelectedEmail(account.email); setPassword(DEMO_PASSWORD); setError(""); }}><RoleIcon aria-hidden /><span><strong>{account.roleLabel}</strong><small>{account.email}</small></span></button>; })}</div></section></section>
+      <section className="login-panel"><div className="login-card"><header><p>WELCOME TO INDUS</p><h2>Sign in to your workspace</h2><span>Select a college and authenticate against its secure tenant account.</span></header><form onSubmit={submit}><label>College<select value={selectedTenant} disabled={submitting} onChange={(event) => { if (isTenantKey(event.target.value)) setSelectedTenant(event.target.value); setError(""); }}>{Object.values(tenants).map((item) => <option key={item.key} value={item.key}>{item.shortName}</option>)}</select><ChevronDown aria-hidden /></label><label>Email<input type="email" value={selectedEmail} disabled={submitting} onChange={(event) => { setSelectedEmail(event.target.value); setError(""); }} /></label><label>Password<div className="password-field"><LockKeyhole aria-hidden /><input type="password" autoComplete="current-password" value={password} disabled={submitting} onChange={(event) => setPassword(event.target.value)} /></div></label>{error && <p className="login-error" role="alert">{error}</p>}<button type="submit" disabled={submitting}>{submitting ? "Signing in..." : `Sign in to ${tenants[selectedTenant].shortName}`}<ArrowRight aria-hidden /></button></form><div className="selected-account"><div><strong>{selected?.name ?? selectedEmail}</strong><span>{selected?.roleLabel ?? "Authorized role workspace"} · {tenants[selectedTenant].shortName}</span></div><CheckCircle2 aria-hidden /></div></div><section className="demo-credentials"><header><div><p>DEMO ACCESS</p><h2>Sample login details</h2></div><span>Shared password: <strong>{DEMO_PASSWORD}</strong></span></header><div>{demoAccounts.map((account) => { const RoleIcon = roleIcons[account.role]; return <button key={account.email} type="button" className={selectedEmail === account.email && selectedTenant === account.tenant ? "active" : ""} disabled={submitting} onClick={() => { setSelectedEmail(account.email); setSelectedTenant(account.tenant); setPassword(DEMO_PASSWORD); setError(""); }}><RoleIcon aria-hidden /><span><strong>{tenants[account.tenant].shortName}</strong><small>{account.email}</small></span></button>; })}</div></section></section>
     </main>
   );
 }
 
-function PortalShell({ session, onLogout }: Readonly<{ session: DemoAccount; onLogout: () => void }>) {
+function PortalShell({ session, onLogout, onSessionChange }: Readonly<{ session: PortalSession; onLogout: () => Promise<void>; onSessionChange: (session: PortalSession) => void }>) {
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [theme, setTheme] = useState<Theme>("campus");
+  const [memberships, setMemberships] = useState<SelectableMembership[]>([]);
+  const [switchingTenant, setSwitchingTenant] = useState(false);
   const tenant = tenants[session.tenant];
   const navigate = useNavigate();
-  const logout = () => { onLogout(); navigate("/"); };
+  useEffect(() => {
+    let active = true;
+    getSelectableMemberships().then((records) => {
+      if (active) setMemberships(records.filter((record) => isTenantKey(record.tenant.key)));
+    }).catch(() => {
+      if (active) setMemberships([]);
+    });
+    return () => { active = false; };
+  }, [session.membershipId]);
+
+  /** Change the active tenant and replace all browser-held tenant credentials. */
+  const selectTenant = async (tenantKey: string) => {
+    if (tenantKey === session.tenant || !isTenantKey(tenantKey)) return;
+    setSwitchingTenant(true);
+    try {
+      const authentication = await switchTenant({ tenantKey, email: session.email });
+      onSessionChange(createPortalSession({ tenantKey, email: session.email }, authentication));
+      navigate("/portal/dashboard");
+    } catch {
+      await onLogout();
+      navigate("/login");
+    } finally {
+      setSwitchingTenant(false);
+    }
+  };
+  /** Complete server-backed logout even when redirect rendering encounters a failure. */
+  const signOut = async () => {
+    try {
+      await onLogout();
+    } finally {
+      navigate("/");
+    }
+  };
   return (
     <div className="app-shell" data-theme={theme} data-role={session.role}>
-      <aside className={navigationOpen ? "sidebar sidebar-open" : "sidebar"}><div className="brand-block"><span className="brand-mark">{tenant.initials}</span><div><strong>INDUS PORTAL</strong><small>College management</small></div><button className="mobile-close" type="button" aria-label="Close navigation" onClick={() => setNavigationOpen(false)}><X aria-hidden /></button></div><div className="tenant-chip"><span>{tenant.initials}</span><div><strong>{tenant.shortName}</strong><small>{tenant.campus}</small></div></div><nav aria-label="Workspace navigation">{roleNavigation[session.role].map((group) => <section className="nav-group" key={group.label}><h2>{group.label}</h2>{group.items.map(({ to, label, icon: IconComponent }) => <NavLink key={to} to={to} onClick={() => setNavigationOpen(false)}><IconComponent aria-hidden /><span>{label}</span></NavLink>)}</section>)}</nav><div className="sidebar-footer"><div className="user-chip"><span>{session.initials}</span><div><strong>{session.name}</strong><small>{session.roleLabel}</small></div></div><button type="button" onClick={logout}><LogOut aria-hidden /> Sign out</button></div></aside>
+      <aside className={navigationOpen ? "sidebar sidebar-open" : "sidebar"}><div className="brand-block"><span className="brand-mark">{tenant.initials}</span><div><strong>INDUS PORTAL</strong><small>College management</small></div><button className="mobile-close" type="button" aria-label="Close navigation" onClick={() => setNavigationOpen(false)}><X aria-hidden /></button></div><div className="tenant-chip"><span>{tenant.initials}</span><div><strong>{tenant.shortName}</strong><small>{tenant.campus}</small></div></div><nav aria-label="Workspace navigation">{roleNavigation[session.role].map((group) => { const visibleItems = group.items.filter((item) => canOpenRoute(item.to, session.permissions)); return visibleItems.length > 0 && <section className="nav-group" key={group.label}><h2>{group.label}</h2>{visibleItems.map(({ to, label, icon: IconComponent }) => <NavLink key={to} to={to} onClick={() => setNavigationOpen(false)}><IconComponent aria-hidden /><span>{label}</span></NavLink>)}</section>; })}</nav><div className="sidebar-footer"><div className="user-chip"><span>{session.initials}</span><div><strong>{session.name}</strong><small>{session.roleLabel}</small></div></div><button type="button" onClick={signOut}><LogOut aria-hidden /> Sign out</button></div></aside>
       {navigationOpen && <button className="navigation-scrim" type="button" aria-label="Close navigation" onClick={() => setNavigationOpen(false)} />}
-      <main className="workspace"><header className="topbar"><button className="menu-button" type="button" aria-label="Open navigation" onClick={() => setNavigationOpen(true)}><Menu aria-hidden /></button><div className="tenant-title"><span>{tenant.initials}</span><div><strong>{tenant.name}</strong><small>{session.roleLabel} workspace · Academic year 2026–27</small></div></div><div className="topbar-actions"><div className="theme-control" aria-label="Theme selection"><Palette aria-hidden />{(["campus", "scholar", "contrast"] as Theme[]).map((item) => <button key={item} className={theme === item ? "active" : ""} type="button" onClick={() => setTheme(item)} aria-label={`${item} theme`} aria-pressed={theme === item} />)}</div><button className="icon-button" type="button" aria-label="Notifications"><Bell aria-hidden /><i /></button></div></header><Routes><Route path="dashboard" element={<RoleDashboard session={session} tenant={tenant} />} /><Route path=":section" element={<RoleModule session={session} tenant={tenant} />} /><Route path="*" element={<Navigate to="dashboard" replace />} /></Routes></main>
+      <main className="workspace"><header className="topbar"><button className="menu-button" type="button" aria-label="Open navigation" onClick={() => setNavigationOpen(true)}><Menu aria-hidden /></button><div className="tenant-title"><span>{tenant.initials}</span><div><strong>{tenant.name}</strong><small>{session.roleLabel} workspace · Academic year 2026–27</small></div></div><div className="topbar-actions">{memberships.length > 1 && <label className="tenant-switcher"><span className="sr-only">Switch college</span><select aria-label="Switch college" value={session.tenant} disabled={switchingTenant} onChange={(event) => selectTenant(event.target.value)}>{memberships.map((membership) => <option key={membership.id} value={membership.tenant.key}>{membership.tenant.short_name}</option>)}</select><ChevronDown aria-hidden /></label>}<div className="theme-control" aria-label="Theme selection"><Palette aria-hidden />{(["campus", "scholar", "contrast"] as Theme[]).map((item) => <button key={item} className={theme === item ? "active" : ""} type="button" onClick={() => setTheme(item)} aria-label={`${item} theme`} aria-pressed={theme === item} />)}</div><button className="icon-button" type="button" aria-label="Notifications"><Bell aria-hidden /><i /></button></div></header><Routes><Route path="dashboard" element={session.role === "applicant" ? <Navigate to="../applicant" replace /> : <OperationalModules session={session} tenant={tenant} onLogout={onLogout} />} /><Route path="applicant" element={<ApplicantPortal />} /><Route path="academics" element={<AcademicMasters />} /><Route path=":section" element={<OperationalModules session={session} tenant={tenant} onLogout={onLogout} />} /><Route path="*" element={<Navigate to="dashboard" replace />} /></Routes></main>
     </div>
   );
 }
 
-const roleMetrics: Record<RoleKey, { label: string; value: string; detail: string; icon: Icon }[]> = {
-  admin: [{ label: "Active students", value: "48", detail: "Across 4 programs", icon: GraduationCap }, { label: "Today's attendance", value: "91.6%", detail: "8 sessions recorded", icon: ClipboardCheck }, { label: "Fees collected", value: "₹3.84L", detail: "Academic year total", icon: IndianRupee }, { label: "Upcoming events", value: "6", detail: "Next 30 days", icon: CalendarDays }],
-  student: [{ label: "Attendance", value: "92.4%", detail: "Above 75% requirement", icon: ClipboardCheck }, { label: "Today's classes", value: "4", detail: "Next at 11:15 AM", icon: Clock3 }, { label: "Fee balance", value: "₹8,500", detail: "Due 15 September", icon: IndianRupee }, { label: "Activity points", value: "18", detail: "Two certificates", icon: Trophy }],
-  parent: [{ label: "Attendance", value: "92.4%", detail: "Nila Raj · B.Sc. CS", icon: ClipboardCheck }, { label: "Fee balance", value: "₹8,500", detail: "Next due 15 September", icon: IndianRupee }, { label: "Classes today", value: "4", detail: "Last class at 3:00 PM", icon: Clock3 }, { label: "Unread notices", value: "2", detail: "One action required", icon: Bell }],
-  faculty: [{ label: "Classes today", value: "3", detail: "Two attendance entries due", icon: Clock3 }, { label: "Assigned students", value: "48", detail: "Two sections", icon: GraduationCap }, { label: "Syllabus progress", value: "68%", detail: "On track for Semester I", icon: BookOpen }, { label: "Advisees at risk", value: "3", detail: "Attendance below 75%", icon: ShieldCheck }],
-  hod: [{ label: "Department students", value: "96", detail: "Four sections", icon: GraduationCap }, { label: "Faculty strength", value: "8", detail: "Six full-time", icon: UsersRound }, { label: "Attendance", value: "90.8%", detail: "Department average", icon: ClipboardCheck }, { label: "Syllabus completion", value: "71%", detail: "Across eight subjects", icon: BookOpen }],
-  event: [{ label: "Upcoming events", value: "6", detail: "Next 30 days", icon: CalendarDays }, { label: "Registrations", value: "184", detail: "Across active events", icon: UsersRound }, { label: "Pending approvals", value: "3", detail: "Venue and budget", icon: ClipboardCheck }, { label: "Certificates", value: "76", detail: "Ready to issue", icon: Trophy }],
-};
-
-function RoleDashboard({ session, tenant }: Readonly<{ session: DemoAccount; tenant: Tenant }>) {
-  const today = new Intl.DateTimeFormat("en-IN", { weekday: "long", day: "numeric", month: "long" }).format(new Date());
-  return <div className="page-content"><section className="page-heading"><div><p>{session.roleLabel.toUpperCase()} OVERVIEW</p><h1>Good morning, {session.name.split(" ")[0]}</h1><span>{today} · {tenant.shortName}</span></div><button className="primary-action" type="button"><Sparkles aria-hidden /> {primaryAction(session.role)}</button></section><section className="metric-grid" aria-label={`${session.roleLabel} metrics`}>{roleMetrics[session.role].map((metric, index) => <Metric key={metric.label} {...metric} tone={["rust", "green", "blue", "gold"][index]} />)}</section><DashboardContent role={session.role} /></div>;
+/** Narrow a server tenant key to one visual tenant configured in this portal. */
+function isTenantKey(value: string): value is TenantKey {
+  return value in tenants;
 }
-
-function DashboardContent({ role }: Readonly<{ role: RoleKey }>) {
-  const content: Record<RoleKey, { title: string; rows: [string, string, string][]; sideTitle: string; notices: string[] }> = {
-    admin: { title: "Today's college operations", rows: [["09:30 AM", "Programming Fundamentals", "Attendance recorded"], ["11:15 AM", "Admission enquiry review", "4 applications"], ["02:00 PM", "Fee collection desk", "Open"]], sideTitle: "Management attention", notices: ["3 students below attendance threshold", "12 fee accounts have pending balances", "Cultural meet venue approval due"] },
-    student: { title: "My day", rows: [["09:30 AM", "Programming Fundamentals", "Room 204"], ["11:15 AM", "Digital Principles", "Lab 2"], ["02:00 PM", "Communicative English", "Room 106"]], sideTitle: "For you", notices: ["Semester orientation schedule published", "Innovation workshop registration open", "Fee instalment due 15 September"] },
-    parent: { title: "Nila's academic day", rows: [["09:30 AM", "Programming Fundamentals", "Present"], ["11:15 AM", "Digital Principles", "Scheduled"], ["02:00 PM", "Communicative English", "Scheduled"]], sideTitle: "Parent updates", notices: ["Attendance remains above requirement", "Fee receipt IAS-2026-018 available", "Parent–faculty meeting on 20 September"] },
-    faculty: { title: "Teaching schedule", rows: [["09:30 AM", "B.Sc. CS I-A", "Attendance recorded"], ["11:15 AM", "B.Sc. CS I-B", "Attendance due"], ["02:30 PM", "Student advising", "3 appointments"]], sideTitle: "Teaching actions", notices: ["Submit attendance for B.Sc. CS I-B", "Update Unit II lesson progress", "Review three advisee attendance alerts"] },
-    hod: { title: "Department pulse", rows: [["Computer Science", "Attendance average", "90.8%"], ["Semester I", "Syllabus completion", "71%"], ["Faculty workload", "Average weekly hours", "18.5"]], sideTitle: "Review queue", notices: ["Two timetable conflicts need resolution", "Three attendance alerts need review", "Faculty meeting agenda ready"] },
-    event: { title: "Event operations", rows: [["12 SEP", "Future Leaders Forum", "128 registered"], ["18 SEP", "Innovation Workshop", "Venue approved"], ["24 SEP", "Cultural Meet", "Budget review"]], sideTitle: "Coordinator queue", notices: ["Approve 3 club proposals", "Publish cultural meet volunteers list", "76 participation certificates ready"] },
-  };
-  const selected = content[role];
-  return <section className="dashboard-columns"><div className="operations-panel"><header><div><p>LIVE WORKSPACE</p><h2>{selected.title}</h2></div><button type="button">View details</button></header>{selected.rows.map(([time, title, detail]) => <div className="operation-row" key={`${time}-${title}`}><span className="time-block">{time.split(" ")[0]}<small>{time.split(" ").slice(1).join(" ")}</small></span><div><strong>{title}</strong><p>{detail}</p></div><span className="status status-complete">Active</span></div>)}</div><div className="activity-panel"><header><p>ACTION CENTER</p><h2>{selected.sideTitle}</h2></header><div className="activity-list">{selected.notices.map((notice, index) => <article key={notice}><i /><div><strong>{notice}</strong><p>{index === 0 ? "Requires attention today" : "Updated recently"}</p><small>{index === 0 ? "Priority" : "View details"}</small></div></article>)}</div></div></section>;
-}
-
-function RoleModule({ session, tenant }: Readonly<{ session: DemoAccount; tenant: Tenant }>) {
-  const location = useLocation();
-  const section = location.pathname.split("/").at(-1)?.replaceAll("-", " ") ?? "workspace";
-  const rows = sampleRows(section, session.role);
-  return <div className="page-content"><section className="page-heading"><div><p>{session.roleLabel.toUpperCase()} WORKSPACE</p><h1>{toTitle(section)}</h1><span>{tenant.shortName} · Sample demo records</span></div><button className="primary-action" type="button"><Sparkles aria-hidden /> Add {section.replace(/s$/, "")}</button></section><section className="sample-table-shell"><header><div><h2>{toTitle(section)}</h2><span>{rows.length} sample records</span></div><button type="button">Filter records</button></header><div className="sample-table">{rows.map((row, index) => <article key={row[0]}><span className="row-index">{String(index + 1).padStart(2, "0")}</span><div><strong>{row[0]}</strong><p>{row[1]}</p></div><span className="row-status">{row[2]}</span></article>)}</div></section></div>;
-}
-
-function Metric({ label, value, detail, icon: IconComponent, tone }: Readonly<{ label: string; value: string; detail: string; icon: Icon; tone: string }>) {
-  return <article className={`metric metric-${tone}`}><div><p>{label}</p><strong>{value}</strong><span>{detail}</span></div><IconComponent aria-hidden /></article>;
-}
-
-function primaryAction(role: RoleKey) {
-  return ({ admin: "Add student", student: "View timetable", parent: "View student", faculty: "Take attendance", hod: "Review department", event: "Create event" })[role];
-}
-
-function sampleRows(section: string, role: RoleKey): [string, string, string][] {
-  const common: Record<string, [string, string, string][]> = {
-    students: [["Nila Raj", "IAS-CS-2026-014 · B.Sc. Computer Science", "Active"], ["Kavin M", "IAS-CS-2026-018 · B.Sc. Computer Science", "Active"], ["Harini S", "IAS-CO-2026-009 · B.Com.", "Active"]],
-    faculty: [["Dr. Meera Nair", "Computer Science · 18 hours/week", "Available"], ["Dr. Arul Prakash", "Head · Computer Science", "On campus"], ["Prof. Latha R", "Commerce · 16 hours/week", "In class"]],
-    attendance: [["Programming Fundamentals", "B.Sc. CS I-A · 46/48 present", "95.8%"], ["Financial Accounting", "B.Com. I-A · 42/46 present", "91.3%"], ["Communicative English", "Combined section · 85/94 present", "90.4%"]],
-    fees: [["Nila Raj", "Total ₹35,000 · Paid ₹26,500", "₹8,500 due"], ["Kavin M", "Total ₹35,000 · Paid ₹35,000", "Paid"], ["Harini S", "Total ₹32,000 · Concession ₹4,000", "₹12,000 due"]],
-    events: [["Future Leaders Forum", "12 September · Main Auditorium", "128 registered"], ["Innovation Workshop", "18 September · Design Lab", "Open"], ["Cultural Meet", "24 September · Open Air Theatre", "Planning"]],
-    notices: [["Semester orientation schedule", "All first-year students", "Published"], ["Innovation workshop registration", "Students and faculty", "Published"], ["Parent–faculty meeting", "B.Sc. CS I-A parents", "Scheduled"]],
-    timetable: [["Programming Fundamentals", "09:30 AM · Room 204", "Today"], ["Digital Principles", "11:15 AM · Lab 2", "Today"], ["Communicative English", "02:00 PM · Room 106", "Today"]],
-    participants: [["Nila Raj", "Future Leaders Forum · Speaker", "Confirmed"], ["Kavin M", "Innovation Workshop · Participant", "Registered"], ["Harini S", "Cultural Meet · Volunteer", "Approved"]],
-    academics: [["B.Sc. Computer Science", "Semester I · 6 subjects", "Active"], ["B.Com.", "Semester I · 6 subjects", "Active"], ["B.A. English", "Semester I · 5 subjects", "Active"]],
-  };
-  return common[section] ?? [[`${toTitle(section)} summary`, `${role} demo workspace`, "Ready"], ["Sample record", "Connected module data follows", "Preview"], ["Implementation item", "Included in the demo roadmap", "Planned"]];
-}
-
-function toTitle(value: string) { return value.split(" ").map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`).join(" "); }
 
 export default PortalApp;

@@ -21,7 +21,9 @@ One hosted application can serve many colleges. Each college is a separate **ten
 | [Demo Scope and Experience](docs/07-demo-scope-and-experience.md) | Everyone | Exact scope, users, screens, and boundaries of the first demo |
 | [Demo Implementation Plan](docs/08-demo-implementation-plan.md) | Product and development teams | Build sequence, acceptance criteria, tests, and demo walkthrough |
 | [Multi-Tenant Demo Decision](docs/09-multi-tenant-demo-decision.md) | Product and development teams | Tenant identity, isolation, switching, branding, and seed strategy |
+| [Authoritative Implementation Plan](docs/10-authoritative-implementation-plan.md) | Product and engineering teams | Complete role model, module sequence, delivery rules, and completion gates |
 | [Implementation Status](docs/implementation-status.md) | Everyone | Current implementation state, limitations, validation, and next review gate |
+| [Module Catalogue](docs/modules/README.md) | Product and engineering | Per-screen purpose, workflows, rules, data, UI status, and acceptance criteria |
 
 ## Proposed First Release
 
@@ -44,7 +46,34 @@ Library, hostel, transport, placement, activities, complete HR/payroll, and full
 
 Before building the complete first release, the project will deliver a smaller working demo for two college tenants: **INDUS ARTS & SCIENCE INTERNATIONAL COLLEGE** and **INDUS LAW COLLEGE**. The demo will prove tenant isolation and show connected student, academic, attendance, fee, notice, and dashboard workflows using realistic sample data.
 
-The exact demo boundary is defined in [Demo Scope and Experience](docs/07-demo-scope-and-experience.md). The step-by-step build sequence is defined in [Demo Implementation Plan](docs/08-demo-implementation-plan.md).
+The demo boundary is defined in [Demo Scope and Experience](docs/07-demo-scope-and-experience.md). Production implementation now follows the [Authoritative Implementation Plan](docs/10-authoritative-implementation-plan.md); the older demo plan remains a record of the prototype scope.
+
+Production Increment 1 now includes the PostgreSQL tenancy and authorization foundation, the full
+baseline permission and role-template catalogue, and idempotent onboarding for both initial INDUS
+tenants. With the backend environment configured, synchronize these records from the repository root:
+
+```bash
+cd backend && ../.venv/bin/python -m app.commands.onboard_tenants
+```
+
+For an explicitly controlled local demo, provide a temporary password of 12 to 72 UTF-8 bytes and
+opt in to synthetic administrator creation:
+
+```bash
+cd backend && DEMO_SEED_PASSWORD='temporary-demo-password' \
+  ../.venv/bin/python -m app.commands.onboard_tenants --seed-demo
+```
+
+Running onboarding without `--seed-demo` continues to synchronize only tenants and authorization
+definitions. Authentication is exposed under `/api/v1/auth`, and account invitations, password
+changes, and session management are exposed under `/api/v1/identity`. Invitation tokens are returned
+to the authorized administrator until a communication provider is configured. Authorized tenant
+administrators can also list memberships, suspend or end access, reactivate eligible memberships,
+and revoke all sessions for a selected membership. Platform authentication is isolated under
+`/api/v1/platform`: its audience-restricted credentials can list the tenant directory and control
+tenant lifecycle, but cannot access tenant-bound routes or tenant-owned records. The college login
+frontend now authenticates the two seeded College Administrators, restores sessions through refresh
+rotation, and revokes the backend session on sign-out. Operational module records remain previews.
 
 ## Guiding Principles
 
