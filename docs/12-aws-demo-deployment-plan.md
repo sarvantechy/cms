@@ -2,7 +2,13 @@
 
 ## Status
 
-Prepared on 18 September 2026. This is a deployment plan only. No AWS resource, DNS record, database, service, certificate, or application release has been created or changed from this repository review.
+Deployed as a synthetic stakeholder demo on 18 September 2026 using release
+`20260918063508` at `https://ias-cms.4by4softwares.com`.
+
+The deployment reused the existing DNS record, TLS certificate, web root, and inactive frontend-only
+`ias-cms` Nginx site on the shared EC2 host. It added an isolated `cms` PostgreSQL database,
+`cms_owner` and `cms_runtime` roles, private CMS media/state paths, loopback port `8005`, and
+`4by4-cms-demo.service`. No production-readiness claim is made.
 
 The target is a controlled stakeholder demo using synthetic data. It is not a production-ready release and must not contain real college, student, guardian, payment, identity, document, or provider data.
 
@@ -18,7 +24,26 @@ The existing deployment assets are not yet sufficient for the implemented applic
 - No systemd unit exists for the CMS API.
 - No remote migration, database-role bootstrap, demo onboarding, media-directory setup, backup, or backend rollback is performed.
 
-Do not run the existing script as a full-stack release. It may be retained as a frontend artifact prototype until the guarded demo deployment workflow below is implemented and reviewed.
+The deployment assets have been upgraded to the guarded full-stack demo workflow described below.
+`deployment/provision-demo.sh` performs one-time isolated bootstrap, while
+`deployment/deploy.sh` builds versioned backend/frontend artifacts, backs up the CMS database/media,
+migrates, seeds synthetic data, and activates only the CMS service/site.
+
+## Verified Deployment
+
+- AWS account `416433190584`, region `ap-south-2`.
+- Existing shared EC2 host `i-0baf4f73e58afd63d` (`t3.small`).
+- Existing `ias-cms.4by4softwares.com` DNS and certificate reused.
+- FastAPI runs as unprivileged `cms-demo` through `4by4-cms-demo.service` on
+    `127.0.0.1:8005`, with a 350 MB memory limit.
+- PostgreSQL remains loopback-only; the isolated `cms` database contains two synthetic tenants.
+- Alembic is at `e2b7c4d91a60`; 108 tenant-owned tables report both RLS and forced RLS.
+- Loopback OpenAPI exposes 219 paths; Nginx proxies `/api/` and `/health/live` only.
+- Public root and `/login` return `200`; unauthenticated `/api/v1/auth/me` returns `401`.
+- Arts & Science and Law demo administrators authenticate to distinct tenant IDs.
+- Release and pre-migration database/media backups are stored below the CMS-specific S3 prefixes.
+- Himalayan Access, Scoring Basket, 4by4 Analytics, and the main 4by4 site remained active and
+    reachable after the release.
 
 ## Demo Architecture
 
@@ -251,3 +276,6 @@ No AWS action may begin until all of the following are explicit:
 - rollback owner and previous release;
 - confirmation that only synthetic demo data will be used;
 - direct user approval to deploy.
+
+The 18 September 2026 demo release passed this gate. Future releases still require explicit user
+approval and must use `deployment/deploy.sh`; bootstrap must not be rerun during routine releases.

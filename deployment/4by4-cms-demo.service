@@ -1,0 +1,23 @@
+[Unit]
+Description=4by4 CMS Demo FastAPI Service
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cms-demo
+Group=cms-demo
+WorkingDirectory=/opt/4by4-cms
+EnvironmentFile=/etc/4by4-cms-demo.env
+ExecStart=/opt/4by4-cms/.venv/bin/uvicorn app.production_main:app --host 127.0.0.1 --port 8005 --workers 1
+Restart=on-failure
+RestartSec=5
+MemoryMax=350M
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/4by4-cms
+
+[Install]
+WantedBy=multi-user.target

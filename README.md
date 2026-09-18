@@ -51,7 +51,8 @@ The repository supports a synthetic working demo for two college tenants: **INDU
 The demo boundary is defined in [Demo Scope and Experience](docs/07-demo-scope-and-experience.md).
 Production implementation follows the [Authoritative Implementation Plan](docs/10-authoritative-implementation-plan.md);
 the older demo plan remains a record of the prototype scope. AWS preparation is documented in the
-[AWS Demo Deployment Plan](docs/12-aws-demo-deployment-plan.md); no deployment is claimed.
+[AWS Demo Deployment Plan](docs/12-aws-demo-deployment-plan.md). The synthetic full-stack demo is
+available at `https://ias-cms.4by4softwares.com`; this is not a production-readiness claim.
 
 Production Increment 1 now includes the PostgreSQL tenancy and authorization foundation, the full
 baseline permission and role-template catalogue, and idempotent onboarding for both initial INDUS

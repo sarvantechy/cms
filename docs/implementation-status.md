@@ -8,10 +8,11 @@ Status: Core closures plus Slices 1 through 4 are implemented locally; Slice 5 p
 
 The production FastAPI path, PostgreSQL schema, forced tenant RLS, authenticated College Administrator workspace, and nine requested operational areas are implemented locally. This is a repository and local-validation statement, not an AWS deployment claim.
 
-An AWS stakeholder-demo plan is prepared in `docs/12-aws-demo-deployment-plan.md`. The existing
-deployment script and Nginx file are frontend-only prototypes and are not yet an approved full-stack
-release path. No AWS deployment, provisioning, DNS change, database migration, or service restart
-has been performed for this CMS.
+The synthetic AWS stakeholder demo is deployed at `https://ias-cms.4by4softwares.com` as release
+`20260918063508`. The existing endpoint was upgraded from frontend-only hosting to an isolated
+FastAPI/PostgreSQL demo service on the shared host. This is a verified demo deployment, not a
+production-readiness claim; details and rollback boundaries are in
+`docs/12-aws-demo-deployment-plan.md`.
 
 ## Implemented
 
@@ -191,9 +192,10 @@ Platform Administrator tenant-lifecycle workspace are source-backed frontend beh
 - External communication and payment providers, binary uploads, scheduled-report execution,
   statutory report templates, and the deferred formal test suite remain release work.
   Permission-scoped report CSV export is implemented locally.
-- Full-stack AWS demo automation remains preparation work: backend artifact installation, isolated
-  systemd service, `/api` proxying, remote migration/onboarding, private media persistence, backup,
-  rollback, and non-destructive public verification must be implemented and reviewed before use.
+- Full-stack AWS demo deployment now includes backend wheel installation, isolated systemd service,
+  `/api` proxying, Alembic migration, explicit synthetic onboarding, private media persistence,
+  pre-migration database/media backups, and non-destructive public verification. Automated rollback
+  remains a documented manual operation, and production hardening remains pending.
 
 ## Deferred Testing Decision
 
