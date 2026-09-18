@@ -1,6 +1,6 @@
 """Pydantic schemas for faculty delivery, timetable, and session operations."""
 
-from datetime import date, time
+from datetime import date, datetime, time
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -140,6 +140,67 @@ class TimetablePeriodSummary(BaseModel):
     start_time: time
     end_time: time
     status: str
+
+
+class TimetablePublicationCreate(BaseModel):
+    """Request publication of the actor-scoped active timetable for one term."""
+
+    term_id: UUID
+    note: str | None = Field(None, max_length=1000)
+
+
+class TimetablePublicationLineSummary(BaseModel):
+    """Return one immutable published timetable line."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    source_period_id: UUID
+    offering_id: UUID
+    subject_id: UUID
+    section_id: UUID
+    faculty_id: UUID
+    room_id: UUID | None
+    subject_code: str
+    subject_name: str
+    section_code: str
+    section_name: str
+    faculty_employee_code: str
+    room_code: str | None
+    room_name: str | None
+    day_of_week: int
+    start_time: time
+    end_time: time
+
+
+class TimetablePublicationSummary(BaseModel):
+    """Return timetable publication metadata without its snapshot lines."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    tenant_id: UUID
+    term_id: UUID
+    scope_type: str
+    scope_reference_id: UUID | None
+    version: int
+    state: str
+    note: str | None
+    published_by_membership_id: UUID
+    published_at: datetime
+
+
+class TimetablePublicationDetail(TimetablePublicationSummary):
+    """Return one publication with its immutable timetable lines."""
+
+    lines: list[TimetablePublicationLineSummary]
+
+
+class PaginatedTimetablePublications(BaseModel):
+    """Return a bounded timetable publication collection."""
+
+    items: list[TimetablePublicationSummary]
+    total: int = Field(ge=0)
 
 
 class ClassSessionCreate(BaseModel):
@@ -296,6 +357,31 @@ class LearningMaterialSummary(LearningMaterialCreate):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
     tenant_id: UUID
+
+
+class StudentLearningMaterialSummary(BaseModel):
+    """Present one scoped learning resource with readable academic context."""
+
+    id: UUID
+    offering_id: UUID
+    title: str
+    material_type: str
+    resource_url: str
+    description: str | None
+    subject_code: str
+    subject_name: str
+    section_code: str
+    section_name: str
+    term_code: str
+    term_name: str
+    faculty_employee_code: str | None
+
+
+class PaginatedStudentLearningMaterials(BaseModel):
+    """Return a bounded collection of scoped Student learning resources."""
+
+    items: list[StudentLearningMaterialSummary]
+    total: int = Field(ge=0)
 
 
 class SyllabusProgressCreate(BaseModel):

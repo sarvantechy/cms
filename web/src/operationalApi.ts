@@ -353,6 +353,7 @@ export type StudentSubjectRegistrationSummary = { id: string; student_id: string
 export type StudentProgressionSummary = { id: string; student_id: string; from_enrollment_id: string; target_academic_year_id: string; target_program_id: string; target_batch_id: string | null; target_section_id: string | null; state: string; decision_reason: string | null; applied_enrollment_id: string | null };
 export type StudentLifecycleRequestSummary = { id: string; student_id: string; request_type: string; from_enrollment_id: string | null; target_academic_year_id: string; target_program_id: string; target_batch_id: string | null; target_section_id: string | null; reason: string; state: string; decision_reason: string | null; reviewed_by_membership_id: string | null; reviewed_at: string | null };
 export type StudentCertificateRequestSummary = { id: string; student_id: string; certificate_type: string; purpose: string; state: string; decision_reason: string | null; issued_reference: string | null; reviewed_by_membership_id: string | null; reviewed_at: string | null };
+export type StudentCertificateDocument = { request_id: string; certificate_type: string; purpose: string; issued_reference: string; verification_reference: string; issued_at: string; issued_by_membership_id: string | null; institution_name: string; institution_short_name: string; primary_color: string; accent_color: string; student_id: string; student_name: string; registration_number: string };
 export type StudentLifecycleResponse = { documents: StudentDocumentSummary[]; subject_registrations: StudentSubjectRegistrationSummary[]; progressions: StudentProgressionSummary[]; lifecycle_requests: StudentLifecycleRequestSummary[]; certificate_requests: StudentCertificateRequestSummary[] };
 
 /** Represent one faculty profile summary. */
@@ -387,6 +388,21 @@ export type LessonPlanSummary = { id: string; tenant_id: string; offering_id: st
 
 /** Represent one offering learning resource. */
 export type LearningMaterialSummary = { id: string; tenant_id: string; offering_id: string; title: string; material_type: string; resource_url: string; description: string | null };
+export type StudentLearningMaterialSummary = {
+  id: string;
+  offering_id: string;
+  title: string;
+  material_type: string;
+  resource_url: string;
+  description: string | null;
+  subject_code: string;
+  subject_name: string;
+  section_code: string;
+  section_name: string;
+  term_code: string;
+  term_name: string;
+  faculty_employee_code: string | null;
+};
 
 /** Represent one dated syllabus completion record. */
 export type SyllabusProgressSummary = { id: string; tenant_id: string; offering_id: string; faculty_id: string; recorded_on: string; topic: string; completion_percentage: number; notes: string | null };
@@ -402,6 +418,46 @@ export type TimetablePeriodSummary = {
   start_time: string;
   end_time: string;
   status: string;
+};
+
+/** Represent one immutable line in a published timetable version. */
+export type TimetablePublicationLineSummary = {
+  id: string;
+  source_period_id: string;
+  offering_id: string;
+  subject_id: string;
+  section_id: string;
+  faculty_id: string;
+  room_id: string | null;
+  subject_code: string;
+  subject_name: string;
+  section_code: string;
+  section_name: string;
+  faculty_employee_code: string;
+  room_code: string | null;
+  room_name: string | null;
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+};
+
+/** Represent one versioned timetable publication. */
+export type TimetablePublicationSummary = {
+  id: string;
+  tenant_id: string;
+  term_id: string;
+  scope_type: string;
+  scope_reference_id: string | null;
+  version: number;
+  state: string;
+  note: string | null;
+  published_by_membership_id: string;
+  published_at: string;
+};
+
+/** Represent one publication with its actor-visible immutable lines. */
+export type TimetablePublicationDetail = TimetablePublicationSummary & {
+  lines: TimetablePublicationLineSummary[];
 };
 
 /** Represent one attendance record row. */
@@ -501,6 +557,29 @@ export type GatewayReconciliationSummary = { id: string; tenant_id: string; paym
 
 /** Represent one issued receipt. */
 export type ReceiptSummary = { id: string; tenant_id: string; payment_id: string; receipt_number: string; issued_at: string; issued_by_membership_id: string | null };
+export type ReceiptDocument = {
+  receipt_id: string;
+  receipt_number: string;
+  verification_reference: string;
+  issued_at: string;
+  issued_by_membership_id: string | null;
+  institution_name: string;
+  institution_short_name: string;
+  primary_color: string;
+  accent_color: string;
+  student_id: string;
+  student_name: string;
+  registration_number: string;
+  payment_id: string;
+  payment_reference: string;
+  payment_method: string;
+  payment_state: string;
+  paid_on: string;
+  payment_note: string | null;
+  currency: string;
+  total_amount: string;
+  allocations: Array<{ invoice_id: string; invoice_number: string; amount: string }>;
+};
 
 /** Represent one student ledger entry row. */
 export type StudentLedgerEntry = {
@@ -573,6 +652,24 @@ export type MarkAdjustmentSummary = { id: string; tenant_id: string; registratio
 /** Represent one source-derived hall ticket. */
 export type HallTicketSummary = { registration_id: string; student_id: string; schedule_id: string; exam_date: string; room_id: string | null; seat_number: string | null; eligibility: string };
 
+export type HallTicketDocument = {
+  issuance_id: string;
+  ticket_number: string;
+  verification_reference: string;
+  issued_at: string;
+  issued_by_membership_id: string;
+  institution_name: string;
+  institution_short_name: string;
+  primary_color: string;
+  accent_color: string;
+  student_id: string;
+  student_name: string;
+  registration_number: string;
+  session_id: string;
+  term_name: string;
+  exams: Array<{ registration_id: string; subject_code: string; subject_name: string; exam_date: string; room_code: string | null; room_name: string | null; seat_number: string | null }>;
+};
+
 /** Represent one published result row. */
 export type PublishedResultSummary = {
   id: string;
@@ -594,6 +691,50 @@ export type PublishedResultDetail = PublishedResultSummary & { lines: Array<{ id
 
 /** Represent one source-derived cumulative transcript. */
 export type TranscriptSummary = { student_id: string; cgpa: string; results: PublishedResultSummary[] };
+
+export type GradeCardDocumentLine = { subject_code: string; subject_name: string; marks_obtained: string; max_marks: string; credits: number; grade: string; grade_point: string };
+export type GradeCardDocument = {
+  issuance_id: string;
+  card_number: string;
+  verification_reference: string;
+  issued_at: string;
+  issued_by_membership_id: string;
+  institution_name: string;
+  institution_short_name: string;
+  primary_color: string;
+  accent_color: string;
+  student_id: string;
+  student_name: string;
+  registration_number: string;
+  result_id: string;
+  session_id: string;
+  term_name: string;
+  publication_version: number;
+  total_marks: string;
+  total_max_marks: string;
+  percentage: string;
+  grade: string;
+  gpa: string;
+  result: string;
+  lines: GradeCardDocumentLine[];
+};
+export type TranscriptDocumentResult = Omit<PublishedResultSummary, "id" | "tenant_id" | "student_id" | "state"> & { result_id: string; term_name: string; lines: GradeCardDocumentLine[] };
+export type TranscriptDocument = {
+  issuance_id: string;
+  transcript_number: string;
+  verification_reference: string;
+  issued_at: string;
+  issued_by_membership_id: string;
+  institution_name: string;
+  institution_short_name: string;
+  primary_color: string;
+  accent_color: string;
+  student_id: string;
+  student_name: string;
+  registration_number: string;
+  cgpa: string;
+  results: TranscriptDocumentResult[];
+};
 
 /** Represent one notice row in communications workflows. */
 export type NoticeSummary = {
@@ -654,6 +795,7 @@ export type ActivityExpenseSummary = { id: string; tenant_id: string; activity_i
 
 /** Represent one verifiable activity certificate. */
 export type ActivityCertificateSummary = { id: string; tenant_id: string; activity_id: string; student_id: string; registration_id: string; serial_number: string; issued_at: string; revoked_at: string | null };
+export type ActivityCertificateDocument = { certificate_id: string; serial_number: string; verification_reference: string; issued_at: string; institution_name: string; institution_short_name: string; primary_color: string; accent_color: string; student_id: string; student_name: string; registration_number: string; activity_id: string; activity_title: string; activity_type: string; activity_date: string; venue: string | null };
 
 /** Represent one immutable activity-point award. */
 export type ActivityPointSummary = { id: string; tenant_id: string; activity_id: string; student_id: string; points: number; reason: string };
@@ -1249,6 +1391,11 @@ export function transitionStudentCertificateRequest(requestId: string, state: "a
   return apiRequest<StudentCertificateRequestSummary>({ method: "PATCH", url: `/api/v1/students/certificate-requests/${requestId}`, data: { state, reason, issued_reference: issuedReference } });
 }
 
+/** Fetch one print-ready issued Student certificate request. */
+export function getStudentCertificateDocument(requestId: string): Promise<StudentCertificateDocument> {
+  return apiRequest<StudentCertificateDocument>({ method: "GET", url: `/api/v1/students/certificate-requests/${requestId}/document` });
+}
+
 /** Fetch faculty profiles for operational list views. */
 export function getFacultyProfiles(): Promise<PaginatedResponse<FacultyProfileSummary>> {
   return apiRequest<PaginatedResponse<FacultyProfileSummary>>({
@@ -1302,6 +1449,32 @@ export function createTimetablePeriod(payload: { offering_id: string; faculty_id
   return apiRequest<TimetablePeriodSummary>({ method: "POST", url: "/api/v1/delivery/periods", data: payload });
 }
 
+/** Fetch actor-visible timetable publication history. */
+export function getTimetablePublications(): Promise<PaginatedResponse<TimetablePublicationSummary>> {
+  return apiRequest<PaginatedResponse<TimetablePublicationSummary>>({
+    method: "GET",
+    url: "/api/v1/delivery/timetable-publications",
+    params: { skip: 0, limit: 100 },
+  });
+}
+
+/** Fetch one actor-visible immutable timetable publication. */
+export function getTimetablePublication(publicationId: string): Promise<TimetablePublicationDetail> {
+  return apiRequest<TimetablePublicationDetail>({
+    method: "GET",
+    url: `/api/v1/delivery/timetable-publications/${publicationId}`,
+  });
+}
+
+/** Publish the actor-scoped active timetable for one term. */
+export function publishTimetable(payload: { term_id: string; note: string | null }): Promise<TimetablePublicationDetail> {
+  return apiRequest<TimetablePublicationDetail>({
+    method: "POST",
+    url: "/api/v1/delivery/timetable-publications",
+    data: payload,
+  });
+}
+
 /** Fetch dated class sessions for attendance preparation. */
 export function getClassSessions(): Promise<PaginatedResponse<ClassSessionSummary>> {
   return apiRequest<PaginatedResponse<ClassSessionSummary>>({ method: "GET", url: "/api/v1/delivery/sessions", params: { skip: 0, limit: 200 } });
@@ -1332,6 +1505,15 @@ export function createLessonPlan(payload: Omit<LessonPlanSummary, "id" | "tenant
 
 /** Fetch offering learning-resource references. */
 export function getLearningMaterials(): Promise<LearningMaterialSummary[]> { return apiRequest({ method: "GET", url: "/api/v1/delivery/materials" }); }
+
+/** Fetch learning materials enriched with the actor's scoped course context. */
+export function getStudentLearningMaterials(): Promise<PaginatedResponse<StudentLearningMaterialSummary>> {
+  return apiRequest<PaginatedResponse<StudentLearningMaterialSummary>>({
+    method: "GET",
+    url: "/api/v1/delivery/student-learning-materials",
+    params: { skip: 0, limit: 200 },
+  });
+}
 
 /** Create one offering learning-resource reference. */
 export function createLearningMaterial(payload: Omit<LearningMaterialSummary, "id" | "tenant_id">): Promise<LearningMaterialSummary> { return apiRequest({ method: "POST", url: "/api/v1/delivery/materials", data: payload }); }
@@ -1448,6 +1630,14 @@ export function postFeePayment(payload: { student_id: string; cashier_session_id
 /** Issue or retrieve one receipt for a payment. */
 export function issuePaymentReceipt(paymentId: string): Promise<ReceiptSummary> {
   return apiRequest<ReceiptSummary>({ method: "POST", url: `/api/v1/fees/payments/${paymentId}/receipt` });
+}
+
+/** Fetch a print-ready receipt derived from authorized financial sources. */
+export function getPaymentReceiptDocument(paymentId: string): Promise<ReceiptDocument> {
+  return apiRequest<ReceiptDocument>({
+    method: "GET",
+    url: `/api/v1/fees/payments/${paymentId}/receipt-document`,
+  });
 }
 
 /** Reverse one payment with a compensating transaction. */
@@ -1606,6 +1796,16 @@ export function getHallTicket(registrationId: string): Promise<HallTicketSummary
   return apiRequest<HallTicketSummary>({ method: "GET", url: `/api/v1/examinations/hall-tickets/${registrationId}` });
 }
 
+/** Issue a hall ticket for one Student exam session on replay-safe terms. */
+export function issueHallTicket(registrationId: string): Promise<{ id: string; ticket_number: string }> {
+  return apiRequest({ method: "POST", url: `/api/v1/examinations/hall-tickets/${registrationId}/issue` });
+}
+
+/** Fetch one print-ready issued hall ticket. */
+export function getHallTicketDocument(registrationId: string): Promise<HallTicketDocument> {
+  return apiRequest<HallTicketDocument>({ method: "GET", url: `/api/v1/examinations/hall-tickets/${registrationId}/document` });
+}
+
 /** Fetch invigilation assignments. */
 export function getInvigilationAssignments(): Promise<PaginatedResponse<InvigilationAssignmentSummary>> {
   return apiRequest<PaginatedResponse<InvigilationAssignmentSummary>>({ method: "GET", url: "/api/v1/examinations/invigilation", params: { skip: 0, limit: 200 } });
@@ -1671,6 +1871,26 @@ export function getPublishedResults(): Promise<PaginatedResponse<PublishedResult
     url: "/api/v1/examinations/results",
     params: { skip: 0, limit: 50 },
   });
+}
+
+/** Issue a grade card for the current published result version. */
+export function issueGradeCard(resultId: string): Promise<{ id: string; card_number: string }> {
+  return apiRequest({ method: "POST", url: `/api/v1/examinations/results/${resultId}/grade-card` });
+}
+
+/** Fetch one print-ready issued grade card. */
+export function getGradeCardDocument(resultId: string): Promise<GradeCardDocument> {
+  return apiRequest<GradeCardDocument>({ method: "GET", url: `/api/v1/examinations/results/${resultId}/grade-card-document` });
+}
+
+/** Issue a transcript for a Student's current published-result manifest. */
+export function issueTranscript(studentId: string): Promise<{ id: string; transcript_number: string }> {
+  return apiRequest({ method: "POST", url: `/api/v1/examinations/transcripts/${studentId}/issue` });
+}
+
+/** Fetch one print-ready issued Student transcript. */
+export function getTranscriptDocument(studentId: string): Promise<TranscriptDocument> {
+  return apiRequest<TranscriptDocument>({ method: "GET", url: `/api/v1/examinations/transcripts/${studentId}/document` });
 }
 
 /** Publish all eligible locked results for one exam session. */
@@ -1936,6 +2156,11 @@ export function getActivityCertificates(activityId: string): Promise<PaginatedRe
 /** Issue one certificate from an attended registration. */
 export function issueActivityCertificate(activityId: string, registrationId: string): Promise<ActivityCertificateSummary> {
   return apiRequest<ActivityCertificateSummary>({ method: "POST", url: `/api/v1/activities/events/${activityId}/certificates`, data: { registration_id: registrationId } });
+}
+
+/** Fetch one print-ready active participation certificate. */
+export function getActivityCertificateDocument(activityId: string, certificateId: string): Promise<ActivityCertificateDocument> {
+  return apiRequest<ActivityCertificateDocument>({ method: "GET", url: `/api/v1/activities/events/${activityId}/certificates/${certificateId}/document` });
 }
 
 /** Fetch point awards for one activity. */

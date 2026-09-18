@@ -186,6 +186,51 @@ class HallTicketSummary(BaseModel):
     eligibility: str
 
 
+class HallTicketIssuanceSummary(BaseModel):
+    """Return immutable hall-ticket issuance metadata."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    student_id: UUID
+    session_id: UUID
+    ticket_number: str
+    issued_at: datetime
+    issued_by_membership_id: UUID
+
+
+class HallTicketDocumentExam(BaseModel):
+    """Present one scheduled examination on a hall ticket."""
+
+    registration_id: UUID
+    subject_code: str
+    subject_name: str
+    exam_date: date
+    room_code: str | None
+    room_name: str | None
+    seat_number: str | None
+
+
+class HallTicketDocument(BaseModel):
+    """Compose one printable hall ticket from issued and academic source records."""
+
+    issuance_id: UUID
+    ticket_number: str
+    verification_reference: str
+    issued_at: datetime
+    issued_by_membership_id: UUID
+    institution_name: str
+    institution_short_name: str
+    primary_color: str
+    accent_color: str
+    student_id: UUID
+    student_name: str
+    registration_number: str
+    session_id: UUID
+    term_name: str
+    exams: list[HallTicketDocumentExam]
+
+
 class InvigilationAssignmentCreate(BaseModel):
     """Payload for assigning one faculty invigilator."""
 
@@ -301,6 +346,107 @@ class TranscriptSummary(BaseModel):
     student_id: UUID
     cgpa: Decimal
     results: list[PublishedResultSummary]
+
+
+class GradeCardIssuanceSummary(BaseModel):
+    """Return immutable grade-card issuance metadata."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    result_id: UUID
+    publication_version: int
+    card_number: str
+    issued_at: datetime
+    issued_by_membership_id: UUID
+
+
+class GradeCardDocumentLine(BaseModel):
+    """Present one snapshotted subject outcome on a grade card."""
+
+    subject_code: str
+    subject_name: str
+    marks_obtained: Decimal
+    max_marks: Decimal
+    credits: int
+    grade: str
+    grade_point: Decimal
+
+
+class GradeCardDocument(BaseModel):
+    """Compose one printable grade card from an issued result version."""
+
+    issuance_id: UUID
+    card_number: str
+    verification_reference: str
+    issued_at: datetime
+    issued_by_membership_id: UUID
+    institution_name: str
+    institution_short_name: str
+    primary_color: str
+    accent_color: str
+    student_id: UUID
+    student_name: str
+    registration_number: str
+    result_id: UUID
+    session_id: UUID
+    term_name: str
+    publication_version: int
+    total_marks: Decimal
+    total_max_marks: Decimal
+    percentage: Decimal
+    grade: str
+    gpa: Decimal
+    result: str
+    lines: list[GradeCardDocumentLine]
+
+
+class TranscriptIssuanceSummary(BaseModel):
+    """Return immutable transcript issuance metadata."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    student_id: UUID
+    transcript_number: str
+    version_hash: str
+    issued_at: datetime
+    issued_by_membership_id: UUID
+
+
+class TranscriptDocumentResult(BaseModel):
+    """Present one published term result in an issued transcript."""
+
+    result_id: UUID
+    session_id: UUID
+    term_name: str
+    publication_version: int
+    total_marks: Decimal
+    total_max_marks: Decimal
+    percentage: Decimal
+    grade: str
+    gpa: Decimal
+    result: str
+    lines: list[GradeCardDocumentLine]
+
+
+class TranscriptDocument(BaseModel):
+    """Compose one printable transcript from an issued result-version manifest."""
+
+    issuance_id: UUID
+    transcript_number: str
+    verification_reference: str
+    issued_at: datetime
+    issued_by_membership_id: UUID
+    institution_name: str
+    institution_short_name: str
+    primary_color: str
+    accent_color: str
+    student_id: UUID
+    student_name: str
+    registration_number: str
+    cgpa: Decimal
+    results: list[TranscriptDocumentResult]
 
 
 class PublishResultsRequest(BaseModel):

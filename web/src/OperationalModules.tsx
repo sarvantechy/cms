@@ -6,11 +6,14 @@ import {
   CheckCircle2,
   ClipboardCheck,
   Clock3,
+  Download,
   Eye,
+  ExternalLink,
   FileCheck2,
   GraduationCap,
   IndianRupee,
   LoaderCircle,
+  Printer,
   RefreshCw,
   UsersRound,
 } from "lucide-react";
@@ -72,6 +75,7 @@ import {
   getAchievements,
   getActivities,
   getActivityApprovals,
+  getActivityCertificateDocument,
   getActivityCertificates,
   getActivityClubs,
   getActivityExpenses,
@@ -83,6 +87,7 @@ import {
   getAdmissionOffers,
   getApplicants,
   getApplicationDetail,
+  downloadApplicationDocument,
   getApplicationDocuments,
   getApplicationHistory,
   getApiErrorMessage,
@@ -100,6 +105,7 @@ import {
   getExamSessions,
   getExamRegistrations,
   getExamSchedules,
+  getGradeCardDocument,
   getCashierSessions,
   getFeeConcessions,
   getFeeHeads,
@@ -109,6 +115,7 @@ import {
   getFacultyAllocations,
   getGatewayReconciliations,
   getGradeRules,
+  getHallTicketDocument,
   getIdentityPermissions,
   getInvigilationAssignments,
   getInvoices,
@@ -125,6 +132,7 @@ import {
   getCommunicationPreferences,
   getNoticeApprovalEvents,
   getNoticeDeliveryJobs,
+  getPaymentReceiptDocument,
   getPayments,
   getPeople,
   getPublishedResults,
@@ -137,22 +145,31 @@ import {
   getStudentLedger,
   getStudentDetail,
   getStudentLifecycle,
+  getStudentCertificateDocument,
+  getStudentLearningMaterials,
   downloadStudentDocument,
   getStudents,
   getSubjectOfferings,
   getSyllabusProgress,
   getTenantRoles,
+  getTimetablePublication,
   getTimetablePeriods,
+  getTimetablePublications,
+  getTranscriptDocument,
   generateClassSessions,
   lockAttendance,
   lockMarks,
   issuePaymentReceipt,
+  issueGradeCard,
+  issueHallTicket,
+  issueTranscript,
   issueActivityCertificate,
   linkStudentGuardian,
   markEventRegistrationAttendance,
   openCashierSession,
   postFeePayment,
   publishExamResults,
+  publishTimetable,
   publishNotice,
   previewNoticeAudience,
   rejectNotice,
@@ -195,6 +212,7 @@ import {
   verifyMarks,
   type AchievementSummary,
   type ActivityApprovalSummary,
+  type ActivityCertificateDocument,
   type ActivityCertificateSummary,
   type ActivityClubSummary,
   type ActivityExpenseSummary,
@@ -230,7 +248,9 @@ import {
   type FeePlanSummary,
   type FeeRefundSummary,
   type GatewayReconciliationSummary,
+  type GradeCardDocument,
   type GradeRuleSummary,
+  type HallTicketDocument,
   type InvigilationAssignmentSummary,
   type LeaveRequestSummary,
   type LearningMaterialSummary,
@@ -241,6 +261,7 @@ import {
   type NoticeSummary,
   type PaymentSummary,
   type PermissionAdminSummary,
+  type ReceiptDocument,
   type PersonSummary,
   type PublishedResultSummary,
   type ReportsOverview,
@@ -254,12 +275,17 @@ import {
   type StudentDetailResponse,
   type StudentEnrollmentSummary,
   type StudentLifecycleResponse,
+  type StudentCertificateDocument,
   type StudentLedgerResponse,
+  type StudentLearningMaterialSummary,
   type StudentSummary,
   type SubjectOfferingSummary,
   type SyllabusProgressSummary,
   type TenantRoleAdminSummary,
   type TimetablePeriodSummary,
+  type TimetablePublicationDetail,
+  type TimetablePublicationSummary,
+  type TranscriptDocument,
 } from "./operationalApi";
 import { listAcademicEntities, type AcademicYearSummary, type BatchSummary, type DepartmentSummary, type ProgramSummary, type RoomSummary, type SectionSummary, type SubjectSummary, type TermSummary } from "./academicApi";
 import AccessAdministration from "./AccessAdministration";
@@ -270,6 +296,7 @@ export type OperationalSession = {
   name: string;
   roleLabel: string;
   permissions: string[];
+  scopes: Array<{ scope_type: string; scope_reference_id: string | null }>;
 };
 
 /** Carry the minimum tenant identity required by operational views. */
@@ -464,7 +491,7 @@ export function OperationalModules({ session, tenant, onLogout }: Readonly<Opera
     }
   }
 
-  /** Submit one create-notice request from the modal form. */
+  /** Submit one create-notice request from the workspace screen. */
   async function submitNotice(event: React.SubmitEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     setSubmittingNotice(true);
@@ -487,7 +514,7 @@ export function OperationalModules({ session, tenant, onLogout }: Readonly<Opera
     setSubmittingNotice(false);
   }
 
-  /** Submit one create-event request from the modal form. */
+  /** Submit one create-event request from the workspace screen. */
   async function submitEvent(event: React.SubmitEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     setSubmittingEvent(true);
@@ -546,9 +573,16 @@ export function OperationalModules({ session, tenant, onLogout }: Readonly<Opera
       {actionError && <Banner tone="error" message={actionError} />}
       {actionMessage && <Banner tone="success" message={actionMessage} />}
 
-      {section === "dashboard" && data.overview && <DashboardSection overview={data.overview} />}
-      {section === "dashboard" && !data.overview && <RoleDashboardSection data={data} permissions={session.permissions} />}
-      {!canManageSection && !["dashboard", "access", "notices"].includes(section) && !(section === "events" && session.permissions.includes("activities.self.register")) && <ReadOnlyRoleSection section={section} data={data} />}
+      {section === "timetable" && (
+        <TimetablePublicationsPanel
+          canPublish={session.permissions.includes("timetable.manage")}
+        />
+      )}
+
+      {section === "dashboard" && data.overview && <DashboardSection overview={data.overview} session={session} />}
+      {section === "dashboard" && !data.overview && <RoleDashboardSection data={data} session={session} />}
+      {section === "learning" && <StudentLearningMaterialsSection />}
+      {!canManageSection && !["dashboard", "access", "notices", "fees", "examinations"].includes(section) && !(section === "events" && session.permissions.includes("activities.self.register")) && <ReadOnlyRoleSection section={section} data={data} />}
 
       {section === "access" && (
         <AccessAdministration
@@ -579,9 +613,12 @@ export function OperationalModules({ session, tenant, onLogout }: Readonly<Opera
       )}
 
       {section === "students" && canManageSection && <StudentsSection students={data.students} />}
+      {section === "students" && !canManageSection && (
+        <StudentRecordsSection students={data.students} onRunAction={runAction} />
+      )}
 
       {(section === "faculty" || section === "timetable") && canManageSection && (
-        <FacultyTimetableSection faculty={data.faculty} people={data.people} offerings={data.offerings} allocations={data.allocations} periods={data.periods} classSessions={data.classSessions} canManageTimetable={session.permissions.includes("timetable.manage")} onRunAction={runAction} onSuccess={refreshWithMessage} />
+        <FacultyTimetableSection faculty={data.faculty} people={data.people} offerings={data.offerings} allocations={data.allocations} periods={data.periods} classSessions={data.classSessions} canManageTimetable={session.permissions.includes("timetable.manage")} canCreateFaculty={session.scopes.some((scope) => scope.scope_type === "institution")} onRunAction={runAction} onSuccess={refreshWithMessage} />
       )}
 
       {section === "attendance" && canManageSection && (
@@ -592,6 +629,10 @@ export function OperationalModules({ session, tenant, onLogout }: Readonly<Opera
           classSessions={data.classSessions}
           students={data.students}
           people={data.people}
+          canRecord={session.permissions.includes("attendance.student.record")}
+          canRequestCorrection={session.permissions.includes("attendance.corrections.request")}
+          canRequestLeave={session.permissions.includes("faculty.delivery.manage")}
+          canReview={session.permissions.includes("attendance.corrections.approve")}
           onRunAction={runAction}
           onSuccess={refreshWithMessage}
         />
@@ -600,9 +641,15 @@ export function OperationalModules({ session, tenant, onLogout }: Readonly<Opera
       {section === "fees" && canManageSection && (
         <FeesSection data={data} onRunAction={runAction} onSuccess={refreshWithMessage} />
       )}
+      {section === "fees" && !canManageSection && (
+        <FeeRecordsSection data={data} onRunAction={runAction} />
+      )}
 
       {section === "examinations" && canManageSection && (
-        <ExaminationsSection data={data} onRunAction={runAction} onSuccess={refreshWithMessage} />
+        <ExaminationsSection data={data} canIssueDocuments={session.permissions.includes("examinations.documents.issue")} onRunAction={runAction} onSuccess={refreshWithMessage} />
+      )}
+      {section === "examinations" && !canManageSection && (
+        <ExaminationRecordsSection data={data} onRunAction={runAction} />
       )}
 
       {section === "notices" && (
@@ -625,7 +672,7 @@ export function OperationalModules({ session, tenant, onLogout }: Readonly<Opera
       )}
 
       {showNoticeForm && (
-        <dialog className="modal-panel modal-inline" open aria-labelledby="create-notice-title">
+        <section className="workspace-subscreen workspace-panel workspace-screen" aria-labelledby="create-notice-title">
           <header>
             <div><p>COMMUNICATIONS</p><h2 id="create-notice-title">Create notice</h2></div>
             <button className="icon-button" type="button" onClick={() => setShowNoticeForm(false)} aria-label="Close notice form">x</button>
@@ -642,11 +689,11 @@ export function OperationalModules({ session, tenant, onLogout }: Readonly<Opera
               </button>
             </footer>
           </form>
-        </dialog>
+        </section>
       )}
 
       {showEventForm && (
-        <dialog className="modal-panel modal-inline" open aria-labelledby="create-event-title">
+        <section className="workspace-subscreen workspace-panel workspace-screen" aria-labelledby="create-event-title">
           <header>
             <div><p>ACTIVITIES</p><h2 id="create-event-title">Create event</h2></div>
             <button className="icon-button" type="button" onClick={() => setShowEventForm(false)} aria-label="Close event form">x</button>
@@ -666,7 +713,7 @@ export function OperationalModules({ session, tenant, onLogout }: Readonly<Opera
               </button>
             </footer>
           </form>
-        </dialog>
+        </section>
       )}
     </div>
   );
@@ -681,6 +728,10 @@ async function loadDataForSection(section: string, permissions: string[]): Promi
         state.overview = await getReportsOverview();
       } else {
         const requests: Promise<void>[] = [];
+        if (permissions.includes("students.records.read")) requests.push(getStudents().then((rows) => { state.students = rows.items; }));
+        if (permissions.includes("faculty.records.read")) requests.push(getFacultyProfiles().then((rows) => { state.faculty = rows.items; }));
+        if (permissions.includes("timetable.read")) requests.push(getClassSessions().then((rows) => { state.classSessions = rows.items; }));
+        if (permissions.includes("attendance.student.read")) requests.push(getAttendanceRecords().then((rows) => { state.attendanceRecords = rows.items; }));
         if (permissions.includes("communications.notices.read")) requests.push(getNotices().then((rows) => { state.notices = rows.items; }));
         if (permissions.includes("activities.records.read")) requests.push(getActivities().then((rows) => { state.events = rows.items; }));
         if (permissions.includes("examinations.results.read")) requests.push(getPublishedResults().then((rows) => { state.results = rows.items; }));
@@ -761,8 +812,9 @@ async function loadDataForSection(section: string, permissions: string[]): Promi
     }
     case "fees": {
       if (!hasSectionManagementPermission(section, permissions)) {
-        const invoices = await getInvoices();
+        const [invoices, payments] = await Promise.all([getInvoices(), getPayments()]);
         state.invoices = invoices.items;
+        state.payments = payments.items;
         break;
       }
       const [invoices, payments, heads, plans, concessions, refunds, cashierSessions, reconciliations, students, years, programs] = await Promise.all([
@@ -789,8 +841,12 @@ async function loadDataForSection(section: string, permissions: string[]): Promi
     }
     case "examinations": {
       if (!hasSectionManagementPermission(section, permissions)) {
-        const results = await getPublishedResults();
+        const [results, registrations] = await Promise.all([
+          getPublishedResults(),
+          getExamRegistrations(),
+        ]);
         state.results = results.items;
+        state.registrations = registrations.items;
         break;
       }
       const [schemes, examSessions, gradeRules, schedules, registrations, seats, invigilation, adjustments, results, students, faculty, offerings, terms, subjects, programs, rooms] = await Promise.all([
@@ -856,14 +912,31 @@ async function loadDataForSection(section: string, permissions: string[]): Promi
 }
 
 /** Render a role dashboard exclusively from APIs authorized for the actor. */
-function RoleDashboardSection({ data, permissions }: Readonly<{ data: OperationalData; permissions: string[] }>) {
+function RoleDashboardSection({ data, session }: Readonly<{ data: OperationalData; session: OperationalSession }>) {
+  const { permissions } = session;
   const metrics = [
-    permissions.includes("communications.notices.read") && { label: "Notices", value: data.notices.length, to: "/portal/notices", icon: Bell },
-    permissions.includes("activities.records.read") && { label: "Events", value: data.events.length, to: "/portal/events", icon: CalendarDays },
-    permissions.includes("examinations.results.read") && { label: "Published results", value: data.results.length, to: "/portal/examinations", icon: GraduationCap },
-    permissions.includes("fees.records.read") && { label: "Fee records", value: data.invoices.length, to: "/portal/fees", icon: IndianRupee },
-  ].filter((item): item is { label: string; value: number; to: string; icon: typeof Bell } => Boolean(item));
-  return <section className="metric-grid" aria-label="Authorized workspace totals">{metrics.map(({ label, value, to, icon: Icon }) => <Link className="metric-card" to={to} key={to}><span className="metric-icon"><Icon aria-hidden /></span><div><small>{label}</small><strong>{value}</strong><p>Open authoritative records</p></div></Link>)}</section>;
+    permissions.some((permission) => ["students.records.read", "students.own.read", "students.linked.read"].includes(permission)) && { label: "Students", value: data.students.length, to: "/portal/students", icon: GraduationCap, detail: "Authorized student records" },
+    permissions.includes("faculty.records.read") && { label: "Faculty", value: data.faculty.length, to: "/portal/faculty", icon: UsersRound },
+    permissions.includes("timetable.read") && { label: "Class sessions", value: data.classSessions.length, to: "/portal/timetable", icon: Clock3, detail: "Scheduled teaching activity" },
+    permissions.includes("attendance.student.read") && { label: "Attendance", value: data.attendanceRecords.length, to: "/portal/attendance", icon: ClipboardCheck, detail: "Visible attendance outcomes" },
+    permissions.includes("communications.notices.read") && { label: "Notices", value: data.notices.length, to: "/portal/notices", icon: Bell, detail: "Delivered communications" },
+    (permissions.includes("activities.records.read") || permissions.includes("activities.self.register")) && { label: "Events", value: data.events.length, to: "/portal/events", icon: CalendarDays, detail: "Available campus activities" },
+    permissions.includes("examinations.results.read") && { label: "Published results", value: data.results.length, to: "/portal/examinations", icon: GraduationCap, detail: "Authorized result records" },
+    permissions.includes("fees.records.read") && { label: "Fee records", value: data.invoices.length, to: "/portal/fees", icon: IndianRupee, detail: "Invoices and payment status" },
+  ].filter((item): item is { label: string; value: number; to: string; icon: typeof Bell; detail?: string } => Boolean(item));
+  const pendingCorrections = data.corrections.filter((item) => item.state === "requested").length;
+  const pendingLeave = data.leaveRequests.filter((item) => item.state === "requested").length;
+  const outstandingInvoices = data.invoices.filter((item) => Number(item.outstanding_amount) > 0).length;
+  const activeApplications = data.applications.filter((item) => !["accepted", "rejected", "withdrawn"].includes(item.state)).length;
+  const reopenedResults = data.results.filter((item) => item.state === "reopened").length;
+  const priorities = [
+    pendingCorrections > 0 && `${pendingCorrections} attendance corrections awaiting review`,
+    pendingLeave > 0 && `${pendingLeave} leave requests awaiting review`,
+    outstandingInvoices > 0 && `${outstandingInvoices} fee accounts have an outstanding balance`,
+    activeApplications > 0 && `${activeApplications} applications remain in progress`,
+    reopenedResults > 0 && `${reopenedResults} results require republication`,
+  ].filter((item): item is string => Boolean(item)).slice(0, 4);
+  return <section className="role-dashboard"><header className="dashboard-brief"><div><p>AUTHORIZED OVERVIEW</p><h2>{session.roleLabel}</h2><span>{session.name} · Live records in your assigned scope</span></div><div className="dashboard-date"><CalendarDays aria-hidden /><span>{new Intl.DateTimeFormat("en-IN", { weekday: "short", day: "2-digit", month: "short", year: "numeric" }).format(new Date())}</span></div></header><section className="dashboard-metric-grid" aria-label="Authorized workspace totals">{metrics.map(({ label, value, to, icon: Icon, detail }, index) => <Link className={`metric-card metric-card-${(index % 4) + 1}`} to={to} key={`${to}-${label}`}><span className="metric-icon"><Icon aria-hidden /></span><div><small>{label}</small><strong>{value}</strong><p>{detail ?? "Open authoritative records"}</p></div><ExternalLink aria-hidden className="metric-open" /></Link>)}</section><section className="dashboard-columns role-dashboard-columns"><article className="operations-panel"><header><div><p>PRIORITY</p><h2>Needs attention</h2></div><span className="dashboard-count">{priorities.length}</span></header>{priorities.length === 0 ? <div className="dashboard-empty"><CheckCircle2 aria-hidden /><strong>No pending exceptions</strong><p>Your authorized queues are clear.</p></div> : priorities.map((priority, index) => <div className="operation-row" key={priority}><span className="priority-number">{String(index + 1).padStart(2, "0")}</span><div><strong>{priority}</strong><p>Open the related workspace to review source records.</p></div><span className="status">Open</span></div>)}</article><article className="activity-panel quick-access-panel"><header><p>SHORTCUTS</p><h2>Quick access</h2></header><div className="quick-access-list">{metrics.slice(0, 5).map(({ label, to, icon: Icon }) => <Link to={to} key={`${to}-${label}-quick`}><span><Icon aria-hidden /></span><div><strong>{label}</strong><p>Open workspace</p></div><ExternalLink aria-hidden /></Link>)}</div></article></section></section>;
 }
 
 /** Render authoritative scoped records without mutation controls for read-only actors. */
@@ -899,7 +972,7 @@ function getAuthorizedStudents(permissions: string[]): Promise<{ items: StudentS
 }
 
 /** Render dashboard module content backed by reports overview totals. */
-function DashboardSection({ overview: initialOverview }: Readonly<{ overview: ReportsOverview }>) {
+function DashboardSection({ overview: initialOverview, session }: Readonly<{ overview: ReportsOverview; session: OperationalSession }>) {
   const emptyFilters: ReportFilters = { start_date: null, end_date: null, academic_year_id: null };
   const [overview, setOverview] = useState(initialOverview);
   const [filters, setFilters] = useState<ReportFilters>(initialOverview.filters);
@@ -915,6 +988,7 @@ function DashboardSection({ overview: initialOverview }: Readonly<{ overview: Re
   async function openMetric(key: string): Promise<void> { const page = await getReportRows(key, filters); setMetric(key); setRows(page.items); }
   return (
     <section className="workspace-stack">
+      <header className="dashboard-brief dashboard-brief-management"><div><p>INSTITUTION COMMAND VIEW</p><h2>College operations</h2><span>{session.name} · Cross-module totals from authorized source records</span></div><div className="dashboard-date"><RefreshCw aria-hidden /><span>Calculated {new Date(overview.calculated_at).toLocaleString("en-IN")}</span></div></header>
       <article className="sample-table-shell"><header><div><h2>Report filters</h2><span>Calculated {new Date(overview.calculated_at).toLocaleString()}</span></div></header><div className="master-form"><div className="form-grid"><label>From<input type="date" value={filters.start_date ?? ""} onChange={(event) => setFilters({ ...filters, start_date: event.target.value || null })} /></label><label>To<input type="date" value={filters.end_date ?? ""} onChange={(event) => setFilters({ ...filters, end_date: event.target.value || null })} /></label></div><div className="inline-actions"><button type="button" onClick={() => void applyFilters()}>Apply filters</button><button type="button" onClick={() => { setFilters(emptyFilters); void getReportsOverview(emptyFilters).then(setOverview); }}>Clear</button></div><form className="inline-actions" onSubmit={(event) => { event.preventDefault(); void saveReport(getFormText(new FormData(event.currentTarget), "name"), filters).then((item) => setSaved([...saved, item])); }}><label>View name<input name="name" required /></label><button type="submit">Save view</button></form>{saved.length > 0 && <label>Saved views<select onChange={(event) => { const item = saved.find((row) => row.id === event.target.value); if (item) setFilters(item.filters); }}><option value="">Choose view</option>{saved.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}</div></article>
       <article className="sample-table-shell"><div className="master-form"><label>Academic year<select value={filters.academic_year_id ?? ""} onChange={(event) => setFilters({ ...filters, academic_year_id: event.target.value || null })}><option value="">All years</option>{academicYears.map((year) => <option key={year.id} value={year.id}>{year.display_name}</option>)}</select></label></div></article>
       <section className="metric-grid" aria-label="Operational totals">
@@ -1095,9 +1169,9 @@ function AdmissionsSection({
           })}</div>
         )}
       </article>
-      {selectedApplication && <ApplicationDetailDialog application={selectedApplication} onClose={() => setSelectedApplication(null)} onSuccess={onSuccess} />}
-      {showEnquiryForm && <dialog className="modal-panel modal-inline" open aria-labelledby="enquiry-form-title"><header><div><p>ADMISSIONS PIPELINE</p><h2 id="enquiry-form-title">Create enquiry</h2></div><button className="icon-button" type="button" onClick={() => setShowEnquiryForm(false)} aria-label="Close enquiry form">x</button></header><form className="master-form" onSubmit={submitEnquiry}><div className="form-grid"><label>First name<input name="first_name" required maxLength={120} /></label><label>Last name<input name="last_name" required maxLength={120} /></label></div><div className="form-grid"><label>Email<input name="email" type="email" maxLength={320} /></label><label>Mobile<input name="mobile_number" type="tel" minLength={7} maxLength={24} /></label></div><label>Campaign<select name="campaign_id" defaultValue=""><option value="">Unassigned</option>{campaigns.map((campaign) => <option key={campaign.id} value={campaign.id}>{campaign.title}</option>)}</select></label><div className="form-grid"><label>Source<input name="source" defaultValue="direct" required maxLength={80} /></label><label>Next follow-up<input name="next_follow_up_at" type="datetime-local" /></label></div><label>Notes<textarea name="notes" rows={3} /></label><footer><button type="button" onClick={() => setShowEnquiryForm(false)}>Cancel</button><button className="primary-action" type="submit">Create enquiry</button></footer></form></dialog>}
-      {createKind && <AdmissionCreateDialog kind={createKind} campaigns={campaigns} applications={applications} applicants={applicants} seatPools={seatPools} academicYears={academicYears} programs={programs} onClose={() => setCreateKind(null)} onSubmit={submitAdmissionsRecord} />}
+      {selectedApplication && <ApplicationDetailScreen application={selectedApplication} onClose={() => setSelectedApplication(null)} onSuccess={onSuccess} />}
+      {showEnquiryForm && <section className="workspace-subscreen workspace-panel workspace-screen" aria-labelledby="enquiry-form-title"><header><div><p>ADMISSIONS PIPELINE</p><h2 id="enquiry-form-title">Create enquiry</h2></div><button className="icon-button" type="button" onClick={() => setShowEnquiryForm(false)} aria-label="Close enquiry form">x</button></header><form className="master-form" onSubmit={submitEnquiry}><div className="form-grid"><label>First name<input name="first_name" required maxLength={120} /></label><label>Last name<input name="last_name" required maxLength={120} /></label></div><div className="form-grid"><label>Email<input name="email" type="email" maxLength={320} /></label><label>Mobile<input name="mobile_number" type="tel" minLength={7} maxLength={24} /></label></div><label>Campaign<select name="campaign_id" defaultValue=""><option value="">Unassigned</option>{campaigns.map((campaign) => <option key={campaign.id} value={campaign.id}>{campaign.title}</option>)}</select></label><div className="form-grid"><label>Source<input name="source" defaultValue="direct" required maxLength={80} /></label><label>Next follow-up<input name="next_follow_up_at" type="datetime-local" /></label></div><label>Notes<textarea name="notes" rows={3} /></label><footer><button type="button" onClick={() => setShowEnquiryForm(false)}>Cancel</button><button className="primary-action" type="submit">Create enquiry</button></footer></form></section>}
+      {createKind && <AdmissionCreateScreen kind={createKind} campaigns={campaigns} applications={applications} applicants={applicants} seatPools={seatPools} academicYears={academicYears} programs={programs} onClose={() => setCreateKind(null)} onSubmit={submitAdmissionsRecord} />}
     </section>
   );
 }
@@ -1105,13 +1179,13 @@ function AdmissionsSection({
 type AdmissionCreateKind = "campaign" | "applicant" | "application" | "document" | "seat_pool" | "offer";
 
 /** Render one selected staff admissions record creation form. */
-function AdmissionCreateDialog({ kind, campaigns, applications, applicants, seatPools, academicYears, programs, onClose, onSubmit }: Readonly<{ kind: AdmissionCreateKind; campaigns: AdmissionCampaignSummary[]; applications: ApplicationSummary[]; applicants: ApplicantListItem[]; seatPools: SeatPoolSummary[]; academicYears: AcademicYearSummary[]; programs: ProgramSummary[]; onClose: () => void; onSubmit: (event: React.SubmitEvent<HTMLFormElement>) => Promise<void> }>) {
+function AdmissionCreateScreen({ kind, campaigns, applications, applicants, seatPools, academicYears, programs, onClose, onSubmit }: Readonly<{ kind: AdmissionCreateKind; campaigns: AdmissionCampaignSummary[]; applications: ApplicationSummary[]; applicants: ApplicantListItem[]; seatPools: SeatPoolSummary[]; academicYears: AcademicYearSummary[]; programs: ProgramSummary[]; onClose: () => void; onSubmit: (event: React.SubmitEvent<HTMLFormElement>) => Promise<void> }>) {
   const selectedApplications = applications.filter((item) => item.state === "selected");
-  return <dialog className="modal-panel modal-inline" open aria-labelledby="admission-create-title"><header><div><p>ADMISSIONS OPERATIONS</p><h2 id="admission-create-title">New {kind.replaceAll("_", " ")}</h2></div><button className="icon-button" type="button" onClick={onClose} aria-label="Close admissions form">x</button></header><form className="master-form" onSubmit={onSubmit}>{kind === "campaign" && <><label>Academic year<select name="academic_year_id" required>{academicYears.map((item) => <option key={item.id} value={item.id}>{item.display_name}</option>)}</select></label><label>Programme<select name="program_id" required>{programs.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><div className="form-grid"><label>Code<input name="code" required maxLength={40} /></label><label>Title<input name="title" required maxLength={240} /></label></div><div className="form-grid"><label>Starts on<input name="starts_on" type="date" required /></label><label>Ends on<input name="ends_on" type="date" required /></label></div></>}{kind === "applicant" && <><div className="form-grid"><label>First name<input name="first_name" required /></label><label>Last name<input name="last_name" required /></label></div><div className="form-grid"><label>Email<input name="email" type="email" /></label><label>Mobile<input name="mobile_number" type="tel" /></label></div><label>Date of birth<input name="date_of_birth" type="date" /></label></>}{kind === "application" && <><label>Campaign<select name="campaign_id" required>{campaigns.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label><label>Applicant<select name="applicant_id" required>{applicants.map((item) => <option key={item.id} value={item.id}>{item.first_name} {item.last_name}</option>)}</select></label><label>Application number<input name="application_number" required maxLength={48} /></label><label>Remarks<textarea name="remarks" rows={3} /></label></>}{kind === "document" && <><label>Application<select name="application_id" required>{applications.map((item) => <option key={item.id} value={item.id}>{item.application_number}</option>)}</select></label><div className="form-grid"><label>Document type<input name="document_type" required maxLength={48} /></label><label>Document number<input name="document_number" maxLength={80} /></label></div><label>File URL<input name="file_url" type="url" maxLength={2048} /></label><label>Notes<textarea name="verification_notes" rows={3} /></label></>}{kind === "seat_pool" && <><label>Campaign<select name="campaign_id" required>{campaigns.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label><div className="form-grid"><label>Category code<input name="category_code" required maxLength={24} /></label><label>Category name<input name="category_name" required maxLength={120} /></label></div><label>Seat capacity<input name="seat_capacity" type="number" required min={0} /></label></>}{kind === "offer" && <><label>Selected application<select name="application_id" required>{selectedApplications.map((item) => <option key={item.id} value={item.id}>{item.application_number}</option>)}</select></label><label>Seat pool<select name="seat_pool_id" required>{seatPools.map((item) => <option key={item.id} value={item.id}>{item.category_code} · {item.seat_capacity - item.filled_seats} available</option>)}</select></label><label>Offer number<input name="offer_number" required maxLength={48} /></label><div className="form-grid"><label>Offered on<input name="offered_on" type="date" required /></label><label>Expires on<input name="expires_on" type="date" required /></label></div><label>Notes<textarea name="notes" rows={3} /></label></>}<footer><button type="button" onClick={onClose}>Cancel</button><button className="primary-action" type="submit">Create {kind.replaceAll("_", " ")}</button></footer></form></dialog>;
+  return <section className="workspace-subscreen workspace-panel workspace-screen" aria-labelledby="admission-create-title"><header><div><p>ADMISSIONS OPERATIONS</p><h2 id="admission-create-title">New {kind.replaceAll("_", " ")}</h2></div><button className="icon-button" type="button" onClick={onClose} aria-label="Close admissions form">x</button></header><form className="master-form" onSubmit={onSubmit}>{kind === "campaign" && <><label>Academic year<select name="academic_year_id" required>{academicYears.map((item) => <option key={item.id} value={item.id}>{item.display_name}</option>)}</select></label><label>Programme<select name="program_id" required>{programs.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><div className="form-grid"><label>Code<input name="code" required maxLength={40} /></label><label>Title<input name="title" required maxLength={240} /></label></div><div className="form-grid"><label>Starts on<input name="starts_on" type="date" required /></label><label>Ends on<input name="ends_on" type="date" required /></label></div></>}{kind === "applicant" && <><div className="form-grid"><label>First name<input name="first_name" required /></label><label>Last name<input name="last_name" required /></label></div><div className="form-grid"><label>Email<input name="email" type="email" /></label><label>Mobile<input name="mobile_number" type="tel" /></label></div><label>Date of birth<input name="date_of_birth" type="date" /></label></>}{kind === "application" && <><label>Campaign<select name="campaign_id" required>{campaigns.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label><label>Applicant<select name="applicant_id" required>{applicants.map((item) => <option key={item.id} value={item.id}>{item.first_name} {item.last_name}</option>)}</select></label><label>Application number<input name="application_number" required maxLength={48} /></label><label>Remarks<textarea name="remarks" rows={3} /></label></>}{kind === "document" && <><label>Application<select name="application_id" required>{applications.map((item) => <option key={item.id} value={item.id}>{item.application_number}</option>)}</select></label><div className="form-grid"><label>Document type<input name="document_type" required maxLength={48} /></label><label>Document number<input name="document_number" maxLength={80} /></label></div><label>File URL<input name="file_url" type="url" maxLength={2048} /></label><label>Notes<textarea name="verification_notes" rows={3} /></label></>}{kind === "seat_pool" && <><label>Campaign<select name="campaign_id" required>{campaigns.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label><div className="form-grid"><label>Category code<input name="category_code" required maxLength={24} /></label><label>Category name<input name="category_name" required maxLength={120} /></label></div><label>Seat capacity<input name="seat_capacity" type="number" required min={0} /></label></>}{kind === "offer" && <><label>Selected application<select name="application_id" required>{selectedApplications.map((item) => <option key={item.id} value={item.id}>{item.application_number}</option>)}</select></label><label>Seat pool<select name="seat_pool_id" required>{seatPools.map((item) => <option key={item.id} value={item.id}>{item.category_code} · {item.seat_capacity - item.filled_seats} available</option>)}</select></label><label>Offer number<input name="offer_number" required maxLength={48} /></label><div className="form-grid"><label>Offered on<input name="offered_on" type="date" required /></label><label>Expires on<input name="expires_on" type="date" required /></label></div><label>Notes<textarea name="notes" rows={3} /></label></>}<footer><button type="button" onClick={onClose}>Cancel</button><button className="primary-action" type="submit">Create {kind.replaceAll("_", " ")}</button></footer></form></section>;
 }
 
 /** Render applicant identity, documents, and append-only application history. */
-function ApplicationDetailDialog({ application, onClose, onSuccess }: Readonly<{ application: ApplicationSummary; onClose: () => void; onSuccess: (message: string) => void }>) {
+function ApplicationDetailScreen({ application, onClose, onSuccess }: Readonly<{ application: ApplicationSummary; onClose: () => void; onSuccess: (message: string) => void }>) {
   const [detail, setDetail] = useState<ApplicationDetailResponse | null>(null);
   const [history, setHistory] = useState<AdmissionsHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1177,7 +1251,210 @@ function ApplicationDetailDialog({ application, onClose, onSuccess }: Readonly<{
     }
   }
 
-  return <dialog className="modal-panel modal-inline modal-wide application-detail" open aria-labelledby="application-detail-title"><header><div><p>ADMISSIONS RECORD</p><h2 id="application-detail-title">{application.application_number}</h2></div><button className="icon-button" type="button" onClick={onClose} aria-label="Close application detail">x</button></header>{loading && !detail ? <div className="state-shell"><LoaderCircle className="state-icon spin" aria-hidden /><p>Loading application...</p></div> : error && !detail ? <div className="state-shell"><AlertCircle className="state-icon" aria-hidden /><p>{error}</p><button className="row-action" type="button" onClick={loadDetail}>Retry</button></div> : detail && <div className="application-detail-body"><section className="detail-summary"><div><strong>{detail.applicant.first_name} {detail.applicant.last_name}</strong><p>{detail.applicant.email ?? "No email"} · {detail.applicant.mobile_number ?? "No mobile"}</p></div><span className="row-status">{detail.application.state}</span><dl><div><dt>Program</dt><dd>{shortId(detail.application.program_id)}</dd></div><div><dt>Submitted</dt><dd>{formatDateTime(detail.application.submitted_at)}</dd></div><div><dt>Remarks</dt><dd>{detail.application.remarks ?? "None"}</dd></div></dl></section>{error && <p className="workspace-banner error" role="alert">{error}</p>}{detail.application.state === "accepted" && <section className="detail-section"><header><div><GraduationCap aria-hidden /><h3>Student conversion</h3></div><span>Idempotent</span></header>{convertedStudent ? <div className="conversion-result"><CheckCircle2 aria-hidden /><div><strong>{convertedStudent.person.full_name}</strong><p>{convertedStudent.registration_number} · {convertedStudent.status}</p></div></div> : <form className="conversion-form" onSubmit={convertToStudent}><input name="registration_number" placeholder="Registration number (defaults to application)" /><input name="batch_id" placeholder="Batch UUID (optional)" /><input name="section_id" placeholder="Section UUID (optional)" /><button className="primary-action" type="submit" disabled={busyDocumentId === "conversion"}>{busyDocumentId === "conversion" ? "Converting..." : "Convert to student"}</button></form>}</section>}<section className="detail-section"><header><div><FileCheck2 aria-hidden /><h3>Documents</h3></div><span>{detail.documents.length} submitted</span></header>{detail.documents.length === 0 ? <EmptyState message="No documents submitted." /> : <div className="detail-list">{detail.documents.map((document) => <article key={document.id}><div><strong>{document.document_type.replaceAll("_", " ")}</strong><p>{document.document_number ?? "No document number"}{document.verification_notes ? ` · ${document.verification_notes}` : ""}</p></div><span className="row-status">{document.verification_state}</span><div className="inline-actions">{document.file_url && <a className="row-action secondary" href={document.file_url} target="_blank" rel="noreferrer">Open</a>}{document.verification_state !== "verified" && <button className="row-action" type="button" disabled={busyDocumentId === document.id} onClick={() => decideDocument(document.id, "verified")}>Verify</button>}{document.verification_state === "pending" && <button className="row-action danger" type="button" disabled={busyDocumentId === document.id} onClick={() => decideDocument(document.id, "rejected")}>Reject</button>}</div></article>)}</div>}</section><section className="detail-section"><header><div><Clock3 aria-hidden /><h3>Workflow history</h3></div><span>{history.length} events</span></header>{history.length === 0 ? <EmptyState message="No history recorded." /> : <ol className="history-list">{history.map((event) => <li key={event.id}><span>{formatDateTime(event.created_at)}</span><div><strong>{event.action.replaceAll(".", " ")}</strong><p>{formatHistoryDetails(event.details)}</p></div></li>)}</ol>}</section></div>}<footer className="dialog-footer"><button type="button" onClick={onClose}>Close</button></footer></dialog>;
+  return (
+    <section className="workspace-subscreen workspace-panel workspace-screen workspace-screen-wide application-detail" aria-labelledby="application-detail-title">
+      <header>
+        <div><p>ADMISSIONS RECORD</p><h2 id="application-detail-title">{application.application_number}</h2></div>
+        <button className="icon-button" type="button" onClick={onClose} aria-label="Close application detail">x</button>
+      </header>
+      {loading && !detail ? (
+        <div className="state-shell"><LoaderCircle className="state-icon spin" aria-hidden /><p>Loading application...</p></div>
+      ) : error && !detail ? (
+        <div className="state-shell"><AlertCircle className="state-icon" aria-hidden /><p>{error}</p><button className="row-action" type="button" onClick={loadDetail}>Retry</button></div>
+      ) : detail && (
+        <div className="application-detail-body">
+          <section className="detail-summary">
+            <div><strong>{detail.applicant.first_name} {detail.applicant.last_name}</strong><p>{detail.applicant.email ?? "No email"} · {detail.applicant.mobile_number ?? "No mobile"}</p></div>
+            <span className="row-status">{detail.application.state}</span>
+            <dl><div><dt>Program</dt><dd>{shortId(detail.application.program_id)}</dd></div><div><dt>Submitted</dt><dd>{formatDateTime(detail.application.submitted_at)}</dd></div><div><dt>Remarks</dt><dd>{detail.application.remarks ?? "None"}</dd></div></dl>
+          </section>
+          {error && <p className="workspace-banner error" role="alert">{error}</p>}
+          {detail.application.state === "accepted" && (
+            <section className="detail-section">
+              <header><div><GraduationCap aria-hidden /><h3>Student conversion</h3></div><span>Idempotent</span></header>
+              {convertedStudent ? (
+                <div className="conversion-result"><CheckCircle2 aria-hidden /><div><strong>{convertedStudent.person.full_name}</strong><p>{convertedStudent.registration_number} · {convertedStudent.status}</p></div></div>
+              ) : (
+                <form className="conversion-form" onSubmit={convertToStudent}><input name="registration_number" placeholder="Registration number (defaults to application)" /><input name="batch_id" placeholder="Batch UUID (optional)" /><input name="section_id" placeholder="Section UUID (optional)" /><button className="primary-action" type="submit" disabled={busyDocumentId === "conversion"}>{busyDocumentId === "conversion" ? "Converting..." : "Convert to student"}</button></form>
+              )}
+            </section>
+          )}
+          <section className="detail-section">
+            <header><div><FileCheck2 aria-hidden /><h3>Documents</h3></div><span>{detail.documents.length} submitted</span></header>
+            {detail.documents.length === 0 ? (
+              <EmptyState message="No documents submitted." />
+            ) : (
+              <div className="detail-list">
+                {detail.documents.map((document) => (
+                  <article key={document.id}>
+                    <div><strong>{document.document_type.replaceAll("_", " ")}</strong><p>{document.document_number ?? "No document number"}{document.verification_notes ? ` · ${document.verification_notes}` : ""}</p></div>
+                    <span className="row-status">{document.verification_state}</span>
+                    <div className="inline-actions">
+                      {document.file_url && <a className="row-action secondary" href={document.file_url} target="_blank" rel="noreferrer">Open</a>}
+                      {document.media_object_id && (
+                        <button className="row-action secondary" type="button" onClick={() => void downloadApplicationDocument(document.id).then((blob) => saveBlob(blob, `${document.document_type}.pdf`))}>
+                          <Download aria-hidden /> Download
+                        </button>
+                      )}
+                      {document.verification_state !== "verified" && <button className="row-action" type="button" disabled={busyDocumentId === document.id} onClick={() => decideDocument(document.id, "verified")}>Verify</button>}
+                      {document.verification_state === "pending" && <button className="row-action danger" type="button" disabled={busyDocumentId === document.id} onClick={() => decideDocument(document.id, "rejected")}>Reject</button>}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+          <section className="detail-section">
+            <header><div><Clock3 aria-hidden /><h3>Workflow history</h3></div><span>{history.length} events</span></header>
+            {history.length === 0 ? <EmptyState message="No history recorded." /> : <ol className="history-list">{history.map((event) => <li key={event.id}><span>{formatDateTime(event.created_at)}</span><div><strong>{event.action.replaceAll(".", " ")}</strong><p>{formatHistoryDetails(event.details)}</p></div></li>)}</ol>}
+          </section>
+        </div>
+      )}
+      <footer className="screen-footer"><button type="button" onClick={onClose}>Close</button></footer>
+    </section>
+  );
+}
+
+/** Render scoped timetable publication history and immutable snapshot lines. */
+function TimetablePublicationsPanel({ canPublish }: Readonly<{ canPublish: boolean }>) {
+  const [publications, setPublications] = useState<TimetablePublicationSummary[]>([]);
+  const [detail, setDetail] = useState<TimetablePublicationDetail | null>(null);
+  const [terms, setTerms] = useState<TermSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  /** Reload visible publication history and the latest immutable snapshot. */
+  async function loadPublications(): Promise<void> {
+    setLoading(true);
+    setError("");
+    try {
+      const [history, termRows] = await Promise.all([
+        getTimetablePublications(),
+        canPublish
+          ? listAcademicEntities("terms", { limit: 200 })
+          : Promise.resolve({ items: [] as TermSummary[], total: 0 }),
+      ]);
+      setPublications(history.items);
+      setTerms(termRows.items);
+      setDetail(history.items[0] ? await getTimetablePublication(history.items[0].id) : null);
+    } catch (loadError) {
+      setError(getApiErrorMessage(loadError));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadPublications();
+  }, [canPublish]);
+
+  /** Publish the current actor-scoped timetable for one selected term. */
+  async function submitPublication(event: React.SubmitEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setWorking(true);
+    setError("");
+    setNotice("");
+    try {
+      const published = await publishTimetable({
+        term_id: getFormText(form, "term_id"),
+        note: nullableString(form.get("note")),
+      });
+      setNotice(`Timetable version ${published.version} published.`);
+      await loadPublications();
+    } catch (publishError) {
+      setError(getApiErrorMessage(publishError));
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  /** Load one historical publication without consulting mutable timetable records. */
+  async function selectPublication(publicationId: string): Promise<void> {
+    setError("");
+    try {
+      setDetail(await getTimetablePublication(publicationId));
+    } catch (loadError) {
+      setError(getApiErrorMessage(loadError));
+    }
+  }
+
+  return (
+    <section className="workspace-stack" aria-label="Published timetable versions">
+      {canPublish && (
+        <article className="sample-table-shell">
+          <header><div><h2>Publish timetable</h2><span>Immutable scoped snapshot</span></div></header>
+          <form className="master-form" onSubmit={submitPublication}>
+            <div className="form-grid">
+              <label>Term<select name="term_id" required>{terms.map((term) => <option key={term.id} value={term.id}>{term.display_name}</option>)}</select></label>
+              <label>Publication note<input name="note" maxLength={1000} placeholder="Optional release note" /></label>
+            </div>
+            <button className="primary-action" type="submit" disabled={working || terms.length === 0}>{working ? "Publishing..." : "Publish version"}</button>
+          </form>
+        </article>
+      )}
+      {notice && <p className="workspace-banner success" role="status">{notice}</p>}
+      {error && <p className="workspace-banner error" role="alert">{error}</p>}
+      <article className="sample-table-shell">
+        <header><div><h2>Published versions</h2><span>{publications.length} snapshots</span></div><button className="row-action secondary" type="button" onClick={() => void loadPublications()}>Refresh</button></header>
+        {loading ? <div className="state-shell"><LoaderCircle className="state-icon spin" aria-hidden /><p>Loading publications...</p></div> : publications.length === 0 ? <EmptyState message="No timetable has been published for your scope." /> : (
+          <div className="sample-table">{publications.map((publication, index) => <article key={publication.id}><span className="row-index">{String(index + 1).padStart(2, "0")}</span><div><strong>Version {publication.version}</strong><p>{formatDateTime(publication.published_at)} · {publication.note ?? "No release note"}</p></div><span className="row-status">{publication.state}</span><button className="row-action secondary" type="button" onClick={() => void selectPublication(publication.id)}>View</button></article>)}</div>
+        )}
+      </article>
+      {detail && (
+        <article className="sample-table-shell">
+          <header><div><h2>Version {detail.version} timetable</h2><span>{detail.lines.length} immutable periods</span></div></header>
+          {detail.lines.length === 0 ? <EmptyState message="No published periods are visible in your assigned scope." /> : (
+            <div className="sample-table">{detail.lines.map((line, index) => <article key={line.id}><span className="row-index">{String(index + 1).padStart(2, "0")}</span><div><strong>{weekdayName(line.day_of_week)} · {line.start_time} - {line.end_time}</strong><p>{line.subject_code} · {line.subject_name} · {line.section_name} · {line.faculty_employee_code}</p></div><span className="row-status">{line.room_name ?? "No room"}</span></article>)}</div>
+          )}
+        </article>
+      )}
+    </section>
+  );
+}
+
+/** Render scoped Student learning resources with readable course context. */
+function StudentLearningMaterialsSection() {
+  const [materials, setMaterials] = useState<StudentLearningMaterialSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  /** Reload only the resources authorized for the current actor's offerings. */
+  async function loadMaterials(): Promise<void> {
+    setLoading(true);
+    setError("");
+    try {
+      const response = await getStudentLearningMaterials();
+      setMaterials(response.items);
+    } catch (loadError) {
+      setError(getApiErrorMessage(loadError));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadMaterials();
+  }, []);
+
+  if (loading) {
+    return <LoadingState section="learning materials" tenant="your class" />;
+  }
+  if (error) {
+    return <ErrorState section="learning materials" tenant="your class" error={error} onRetry={() => void loadMaterials()} />;
+  }
+  return (
+    <section className="workspace-stack" aria-label="Learning materials library">
+      <article className="sample-table-shell">
+        <header><div><h2>Course resources</h2><span>{materials.length} assigned materials</span></div><button className="row-action secondary" type="button" onClick={() => void loadMaterials()}>Refresh</button></header>
+        {materials.length === 0 ? <EmptyState message="No learning materials are available for your assigned subjects." /> : (
+          <div className="sample-table">{materials.map((material, index) => <article key={material.id}><span className="row-index">{String(index + 1).padStart(2, "0")}</span><div><strong>{material.title}</strong><p>{material.subject_code} · {material.subject_name} · {material.section_name} · {material.term_name}</p><small>{material.description ?? `${toHeading(material.material_type)} resource`}{material.faculty_employee_code ? ` · ${material.faculty_employee_code}` : ""}</small></div><span className="row-status">{material.material_type}</span><a className="row-action secondary" href={material.resource_url} target="_blank" rel="noreferrer"><ExternalLink aria-hidden /> Open</a></article>)}</div>
+        )}
+      </article>
+    </section>
+  );
 }
 
 /** Render searchable student records with direct entry and composed profile management. */
@@ -1202,11 +1479,11 @@ function StudentsSection({ students }: Readonly<{ students: StudentSummary[] }>)
     }
   }
 
-  return <section className="workspace-stack"><div className="access-toolbar"><label className="search-control">Search students<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Name, registration, or contact" /></label><button className="primary-action" type="button" onClick={() => setShowCreate(true)}>New student</button></div>{error && <Banner tone="error" message={error} />}<article className="sample-table-shell"><header><div><h2>Students</h2><span>{filtered.length} of {students.length} records</span></div></header>{filtered.length === 0 ? <EmptyState message="No students match this search." /> : <div className="sample-table">{filtered.map((row, index) => <article key={row.id}><span className="row-index">{String(index + 1).padStart(2, "0")}</span><div><strong>{row.person.full_name}</strong><p>{row.registration_number} · {row.person.email ?? row.person.mobile_number ?? "No contact"}</p></div><span className="row-status">{row.status}</span><button className="row-action secondary" type="button" onClick={() => setSelectedStudent(row)}><Eye aria-hidden /> Profile</button></article>)}</div>}</article>{selectedStudent && <StudentDetailDialog student={selectedStudent} onClose={() => setSelectedStudent(null)} />}{showCreate && <dialog className="modal-panel modal-inline" open aria-labelledby="student-create-title"><header><div><p>STUDENT RECORDS</p><h2 id="student-create-title">New student</h2></div><button className="icon-button" type="button" onClick={() => setShowCreate(false)} aria-label="Close student form">x</button></header><form className="master-form" onSubmit={submitStudent}><label>Full name<input name="full_name" required maxLength={240} /></label><label>Registration number<input name="registration_number" required maxLength={48} /></label><div className="form-grid"><label>Email<input name="email" type="email" /></label><label>Mobile<input name="mobile_number" type="tel" /></label></div><label>Date of birth<input name="date_of_birth" type="date" /></label><footer><button type="button" onClick={() => setShowCreate(false)}>Cancel</button><button className="primary-action" type="submit">Create student</button></footer></form></dialog>}</section>;
+  return <section className="workspace-stack"><div className="access-toolbar"><label className="search-control">Search students<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Name, registration, or contact" /></label><button className="primary-action" type="button" onClick={() => setShowCreate(true)}>New student</button></div>{error && <Banner tone="error" message={error} />}<article className="sample-table-shell"><header><div><h2>Students</h2><span>{filtered.length} of {students.length} records</span></div></header>{filtered.length === 0 ? <EmptyState message="No students match this search." /> : <div className="sample-table">{filtered.map((row, index) => <article key={row.id}><span className="row-index">{String(index + 1).padStart(2, "0")}</span><div><strong>{row.person.full_name}</strong><p>{row.registration_number} · {row.person.email ?? row.person.mobile_number ?? "No contact"}</p></div><span className="row-status">{row.status}</span><button className="row-action secondary" type="button" onClick={() => setSelectedStudent(row)}><Eye aria-hidden /> Profile</button></article>)}</div>}</article>{selectedStudent && <StudentDetailScreen student={selectedStudent} onClose={() => setSelectedStudent(null)} />}{showCreate && <section className="workspace-subscreen workspace-panel workspace-screen" aria-labelledby="student-create-title"><header><div><p>STUDENT RECORDS</p><h2 id="student-create-title">New student</h2></div><button className="icon-button" type="button" onClick={() => setShowCreate(false)} aria-label="Close student form">x</button></header><form className="master-form" onSubmit={submitStudent}><label>Full name<input name="full_name" required maxLength={240} /></label><label>Registration number<input name="registration_number" required maxLength={48} /></label><div className="form-grid"><label>Email<input name="email" type="email" /></label><label>Mobile<input name="mobile_number" type="tel" /></label></div><label>Date of birth<input name="date_of_birth" type="date" /></label><footer><button type="button" onClick={() => setShowCreate(false)}>Cancel</button><button className="primary-action" type="submit">Create student</button></footer></form></section>}</section>;
 }
 
 /** Render one canonical student profile and its related operational history. */
-function StudentDetailDialog({
+function StudentDetailScreen({
   student,
   onClose,
 }: Readonly<{ student: StudentSummary; onClose: () => void }>) {
@@ -1306,9 +1583,8 @@ function StudentDetailDialog({
   const current = detail?.student ?? student;
   const statusTargets = nextStudentStates(current.status);
   return (
-    <dialog
-      className="modal-panel modal-inline modal-wide application-detail"
-      open
+    <section
+      className="workspace-subscreen workspace-panel workspace-screen workspace-screen-wide application-detail"
       aria-labelledby="student-detail-title"
     >
       <header>
@@ -1633,7 +1909,7 @@ function StudentDetailDialog({
           </section>
         </div>
       )}
-    </dialog>
+    </section>
   );
 }
 
@@ -1704,6 +1980,7 @@ function StudentLifecyclePanel({
   sections: SectionSummary[];
 }>) {
   const [records, setRecords] = useState<StudentLifecycleResponse | null>(null);
+  const [certificateDocument, setCertificateDocument] = useState<StudentCertificateDocument | null>(null);
   const [offerings, setOfferings] = useState<SubjectOfferingSummary[]>([]);
   const [formKind, setFormKind] = useState<StudentLifecycleFormKind | null>(
     null,
@@ -1736,6 +2013,16 @@ function StudentLifecyclePanel({
       await action();
       setFormKind(null);
       await loadLifecycle();
+    } catch (actionError) {
+      setError(getApiErrorMessage(actionError));
+    }
+  }
+
+  /** Open one issued Student certificate and report retrieval failures in the profile panel. */
+  async function openCertificate(requestId: string): Promise<void> {
+    try {
+      setCertificateDocument(await getStudentCertificateDocument(requestId));
+      setError("");
     } catch (actionError) {
       setError(getApiErrorMessage(actionError));
     }
@@ -2183,12 +2470,36 @@ function StudentLifecyclePanel({
                   }
                 />
               )}
+              {item.state === "issued" && (
+                <button type="button" onClick={() => void openCertificate(item.id)}><Printer aria-hidden="true" /> Print certificate</button>
+              )}
             </article>
           ))}
         </div>
       )}
+      {certificateDocument && <CertificateDocumentScreen document={certificateDocument} kind="requested" onClose={() => setCertificateDocument(null)} />}
     </section>
   );
+}
+
+/** Render own or linked Student certificate requests without staff transition controls. */
+function StudentRecordsSection({ students, onRunAction }: Readonly<{ students: StudentSummary[]; onRunAction: (action: () => Promise<void>) => Promise<void> }>) {
+  const [records, setRecords] = useState<StudentLifecycleResponse | null>(null);
+  const [certificateDocument, setCertificateDocument] = useState<StudentCertificateDocument | null>(null);
+  const student = students[0];
+
+  useEffect(() => {
+    if (!student) return;
+    void getStudentLifecycle(student.id).then(setRecords);
+  }, [student]);
+
+  /** Open one issued certificate under the current Student scope. */
+  async function openCertificate(requestId: string): Promise<void> {
+    await onRunAction(async () => setCertificateDocument(await getStudentCertificateDocument(requestId)));
+  }
+
+  if (!student) return <EmptyState message="No Student record is linked to this account." />;
+  return <section className="workspace-stack"><article className="sample-table-shell"><header><div><h2>My records</h2><span>{student.registration_number}</span></div></header><div className="detail-summary"><div><strong>{student.person.full_name}</strong><p>{student.status} · {student.registration_number}</p></div></div></article><article className="sample-table-shell"><header><div><h2>Certificate requests</h2><span>{records?.certificate_requests.length ?? 0} requests</span></div></header>{!records ? <LoadingState section="certificate requests" tenant="Student records" /> : records.certificate_requests.length === 0 ? <EmptyState message="No certificate requests found." /> : <div className="sample-table">{records.certificate_requests.map((item) => <article key={item.id}><div><strong>{item.certificate_type}</strong><p>{item.state} · {item.purpose}</p></div>{item.state === "issued" && <button type="button" onClick={() => void openCertificate(item.id)}><Printer aria-hidden="true" /> Print certificate</button>}</article>)}</div>}</article>{certificateDocument && <CertificateDocumentScreen document={certificateDocument} kind="requested" onClose={() => setCertificateDocument(null)} />}</section>;
 }
 
 /** Render combined faculty and timetable module content. */
@@ -2200,6 +2511,7 @@ function FacultyTimetableSection({
   periods,
   classSessions,
   canManageTimetable,
+  canCreateFaculty,
   onRunAction,
   onSuccess,
 }: Readonly<{
@@ -2210,6 +2522,7 @@ function FacultyTimetableSection({
   periods: TimetablePeriodSummary[];
   classSessions: ClassSessionSummary[];
   canManageTimetable: boolean;
+  canCreateFaculty: boolean;
   onRunAction: (action: () => Promise<void>) => Promise<void>;
   onSuccess: (message: string) => void;
 }>) {
@@ -2353,7 +2666,13 @@ function FacultyTimetableSection({
       <div className="access-toolbar">
         {canManageTimetable &&
           (
-            ["faculty", "offering", "allocation", "period", "sessions"] as const
+            [
+              ...(canCreateFaculty ? (["faculty"] as const) : []),
+              "offering",
+              "allocation",
+              "period",
+              "sessions",
+            ] as const
           ).map((kind) => (
             <button
               key={kind}
@@ -2596,9 +2915,8 @@ function FacultyTimetableSection({
         </article>
       </section>
       {createKind && (
-        <dialog
-          className="modal-panel modal-inline"
-          open
+        <section
+          className="workspace-subscreen workspace-panel workspace-screen"
           aria-labelledby="delivery-create-title"
         >
           <header>
@@ -2787,10 +3105,10 @@ function FacultyTimetableSection({
               </button>
             </footer>
           </form>
-        </dialog>
+        </section>
       )}
       {extendedKind && (
-        <ExtendedDeliveryDialog
+        <ExtendedDeliveryScreen
           kind={extendedKind}
           faculty={faculty}
           offerings={offerings}
@@ -2811,7 +3129,7 @@ function FacultyTimetableSection({
 type ExtendedDeliveryKind = "posting" | "substitution" | "lesson" | "material" | "progress";
 
 /** Render and submit one schema-expanded faculty delivery operation form. */
-function ExtendedDeliveryDialog({ kind, faculty, offerings, classSessions, departments, people, subjects, onClose, onRunAction, onCreated, onSuccess }: Readonly<{ kind: ExtendedDeliveryKind; faculty: FacultyProfileSummary[]; offerings: SubjectOfferingSummary[]; classSessions: ClassSessionSummary[]; departments: DepartmentSummary[]; people: PersonSummary[]; subjects: SubjectSummary[]; onClose: () => void; onRunAction: (action: () => Promise<void>) => Promise<void>; onCreated: () => Promise<void>; onSuccess: (message: string) => void }>) {
+function ExtendedDeliveryScreen({ kind, faculty, offerings, classSessions, departments, people, subjects, onClose, onRunAction, onCreated, onSuccess }: Readonly<{ kind: ExtendedDeliveryKind; faculty: FacultyProfileSummary[]; offerings: SubjectOfferingSummary[]; classSessions: ClassSessionSummary[]; departments: DepartmentSummary[]; people: PersonSummary[]; subjects: SubjectSummary[]; onClose: () => void; onRunAction: (action: () => Promise<void>) => Promise<void>; onCreated: () => Promise<void>; onSuccess: (message: string) => void }>) {
   /** Resolve one faculty profile's canonical display name. */
   function nameForFaculty(facultyId: string): string {
     const profile = faculty.find((item) => item.id === facultyId);
@@ -2836,7 +3154,7 @@ function ExtendedDeliveryDialog({ kind, faculty, offerings, classSessions, depar
 
   const facultyOptions = faculty.map((item) => <option key={item.id} value={item.id}>{nameForFaculty(item.id)}</option>);
   const offeringOptions = offerings.map((item) => <option key={item.id} value={item.id}>{subjects.find((subject) => subject.id === item.subject_id)?.name ?? shortId(item.id)}</option>);
-  return <dialog className="modal-panel modal-inline" open aria-labelledby="extended-delivery-title"><header><div><p>DELIVERY RECORD</p><h2 id="extended-delivery-title">New {kind}</h2></div><button className="icon-button" type="button" onClick={onClose} aria-label="Close delivery record form">x</button></header><form className="master-form" onSubmit={submit}>{kind === "posting" && <><label>Faculty<select name="faculty_id" required>{facultyOptions}</select></label><label>Department<select name="department_id" required>{departments.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label>Posting title<input name="title" required maxLength={120} /></label><div className="form-grid"><label>Starts on<input name="starts_on" type="date" required /></label><label>Ends on<input name="ends_on" type="date" /></label></div></>}{kind === "substitution" && <><label>Class session<select name="session_id" required>{classSessions.map((item) => <option key={item.id} value={item.id}>{formatDate(item.session_date)} · {shortId(item.period_id)}</option>)}</select></label><label>Substitute faculty<select name="faculty_id" required>{facultyOptions}</select></label><label>Reason<textarea name="reason" required minLength={3} rows={3} /></label></>}{kind === "lesson" && <><label>Offering<select name="offering_id" required>{offeringOptions}</select></label><label>Faculty<select name="faculty_id" required>{facultyOptions}</select></label><label>Planned date<input name="planned_on" type="date" required /></label><label>Title<input name="title" required /></label><label>Content<textarea name="content" rows={4} /></label></>}{kind === "material" && <><label>Offering<select name="offering_id" required>{offeringOptions}</select></label><label>Title<input name="title" required /></label><label>Material type<select name="material_type"><option value="document">Document</option><option value="link">Link</option><option value="video">Video</option><option value="assignment">Assignment</option><option value="other">Other</option></select></label><label>Resource URL<input name="resource_url" type="url" required /></label><label>Description<textarea name="description" rows={3} /></label></>}{kind === "progress" && <><label>Offering<select name="offering_id" required>{offeringOptions}</select></label><label>Faculty<select name="faculty_id" required>{facultyOptions}</select></label><label>Recorded date<input name="recorded_on" type="date" required /></label><label>Topic<input name="topic" required /></label><label>Completion percentage<input name="completion_percentage" type="number" min={0} max={100} required /></label><label>Notes<textarea name="notes" rows={3} /></label></>}<footer><button type="button" onClick={onClose}>Cancel</button><button className="primary-action" type="submit">Create {kind}</button></footer></form></dialog>;
+  return <section className="workspace-subscreen workspace-panel workspace-screen" aria-labelledby="extended-delivery-title"><header><div><p>DELIVERY RECORD</p><h2 id="extended-delivery-title">New {kind}</h2></div><button className="icon-button" type="button" onClick={onClose} aria-label="Close delivery record form">x</button></header><form className="master-form" onSubmit={submit}>{kind === "posting" && <><label>Faculty<select name="faculty_id" required>{facultyOptions}</select></label><label>Department<select name="department_id" required>{departments.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label>Posting title<input name="title" required maxLength={120} /></label><div className="form-grid"><label>Starts on<input name="starts_on" type="date" required /></label><label>Ends on<input name="ends_on" type="date" /></label></div></>}{kind === "substitution" && <><label>Class session<select name="session_id" required>{classSessions.map((item) => <option key={item.id} value={item.id}>{formatDate(item.session_date)} · {shortId(item.period_id)}</option>)}</select></label><label>Substitute faculty<select name="faculty_id" required>{facultyOptions}</select></label><label>Reason<textarea name="reason" required minLength={3} rows={3} /></label></>}{kind === "lesson" && <><label>Offering<select name="offering_id" required>{offeringOptions}</select></label><label>Faculty<select name="faculty_id" required>{facultyOptions}</select></label><label>Planned date<input name="planned_on" type="date" required /></label><label>Title<input name="title" required /></label><label>Content<textarea name="content" rows={4} /></label></>}{kind === "material" && <><label>Offering<select name="offering_id" required>{offeringOptions}</select></label><label>Title<input name="title" required /></label><label>Material type<select name="material_type"><option value="document">Document</option><option value="link">Link</option><option value="video">Video</option><option value="assignment">Assignment</option><option value="other">Other</option></select></label><label>Resource URL<input name="resource_url" type="url" required /></label><label>Description<textarea name="description" rows={3} /></label></>}{kind === "progress" && <><label>Offering<select name="offering_id" required>{offeringOptions}</select></label><label>Faculty<select name="faculty_id" required>{facultyOptions}</select></label><label>Recorded date<input name="recorded_on" type="date" required /></label><label>Topic<input name="topic" required /></label><label>Completion percentage<input name="completion_percentage" type="number" min={0} max={100} required /></label><label>Notes<textarea name="notes" rows={3} /></label></>}<footer><button type="button" onClick={onClose}>Cancel</button><button className="primary-action" type="submit">Create {kind}</button></footer></form></section>;
 }
 
 /** Render attendance module content with correction and leave actions. */
@@ -2847,6 +3165,10 @@ function AttendanceSection({
   classSessions,
   students,
   people,
+  canRecord,
+  canRequestCorrection,
+  canRequestLeave,
+  canReview,
   onRunAction,
   onSuccess,
 }: Readonly<{
@@ -2856,6 +3178,10 @@ function AttendanceSection({
   classSessions: ClassSessionSummary[];
   students: StudentSummary[];
   people: PersonSummary[];
+  canRecord: boolean;
+  canRequestCorrection: boolean;
+  canRequestLeave: boolean;
+  canReview: boolean;
   onRunAction: (action: () => Promise<void>) => Promise<void>;
   onSuccess: (message: string) => void;
 }>) {
@@ -2889,7 +3215,7 @@ function AttendanceSection({
 
   return (
     <section className="workspace-stack">
-      <div className="access-toolbar"><button className="primary-action" type="button" onClick={() => setCreateKind("attendance")}>Enter attendance</button><button className="row-action secondary" type="button" onClick={() => setShowCorrectionForm(true)}>Request correction</button><button className="row-action secondary" type="button" onClick={() => setCreateKind("leave")}>Request leave</button></div>
+      <div className="access-toolbar">{canRecord && <button className="primary-action" type="button" onClick={() => setCreateKind("attendance")}>Enter attendance</button>}{canRequestCorrection && <button className="row-action secondary" type="button" onClick={() => setShowCorrectionForm(true)}>Request correction</button>}{canRequestLeave && <button className="row-action secondary" type="button" onClick={() => setCreateKind("leave")}>Request leave</button>}</div>
       <AttendanceSummaryPanel students={students} selectedStudentId={summaryStudentId} summary={summary} error={summaryError} onSelectStudent={setSummaryStudentId} />
       <article className="sample-table-shell"><header><div><h2>Class sessions</h2><span>{classSessions.length} generated sessions</span></div></header>{classSessions.length === 0 ? <EmptyState message="Generate sessions from the timetable first." /> : <div className="sample-table">{classSessions.map((row, index) => { const count = attendanceRecords.filter((record) => record.session_id === row.id).length; return <article key={row.id}><span className="row-index">{String(index + 1).padStart(2, "0")}</span><div><strong>{formatDate(row.session_date)}</strong><p>{count} attendance rows · Period {shortId(row.period_id)}</p></div><span className="row-status">{row.state}</span>{count > 0 && row.state !== "locked" && <button className="row-action" type="button" onClick={() => onRunAction(async () => { const result = await lockAttendance(row.id); onSuccess(`${result.locked_count} attendance rows locked.`); })}>Lock register</button>}</article>; })}</div>}</article>
       <article className="sample-table-shell">
@@ -2924,8 +3250,8 @@ function AttendanceSection({
             })} aria-label={`Reject leave ${row.id}`}>Reject</button></> : <span className="row-status">{row.state}</span>}</div></article>)}</div>
         )}
       </article>
-      {createKind && <dialog className="modal-panel modal-inline" open aria-labelledby="attendance-create-title"><header><div><p>ATTENDANCE OPERATIONS</p><h2 id="attendance-create-title">{toHeading(createKind)}</h2></div><button className="icon-button" type="button" onClick={() => setCreateKind(null)} aria-label="Close attendance form">x</button></header><form className="master-form" onSubmit={submitAttendanceOperation}>{createKind === "attendance" && <><label>Class session<select name="session_id" required>{classSessions.filter((item) => item.state !== "locked" && item.state !== "cancelled").map((item) => <option key={item.id} value={item.id}>{formatDate(item.session_date)} · {shortId(item.period_id)}</option>)}</select></label><label>Student<select name="student_id" required>{students.map((item) => <option key={item.id} value={item.id}>{item.person.full_name} · {item.registration_number}</option>)}</select></label><label>Status<select name="status" defaultValue="present"><option value="present">Present</option><option value="absent">Absent</option><option value="late">Late</option><option value="excused">Excused</option></select></label></>}{createKind === "correction" && <><label>Locked attendance record<select name="record_id" required>{attendanceRecords.filter((item) => item.state === "locked").map((item) => <option key={item.id} value={item.id}>{students.find((student) => student.id === item.student_id)?.person.full_name ?? shortId(item.student_id)} · {item.status}</option>)}</select></label><label>Reason<textarea name="reason" required minLength={3} rows={4} /></label></>}{createKind === "leave" && <><label>Person<select name="person_id" required>{people.map((item) => <option key={item.id} value={item.id}>{item.full_name} · {item.email ?? item.mobile_number}</option>)}</select></label><div className="form-grid"><label>Starts on<input name="start_date" type="date" required /></label><label>Ends on<input name="end_date" type="date" required /></label></div><label>Leave type<select name="leave_type" defaultValue="casual"><option value="casual">Casual</option><option value="sick">Sick</option><option value="earned">Earned</option><option value="duty">Duty</option><option value="other">Other</option></select></label><label>Reason<textarea name="reason" rows={4} /></label></>}<footer><button type="button" onClick={() => setCreateKind(null)}>Cancel</button><button className="primary-action" type="submit">Submit</button></footer></form></dialog>}
-      {showCorrectionForm && <AttendanceCorrectionDialog attendanceRecords={attendanceRecords} students={students} onClose={() => setShowCorrectionForm(false)} onRunAction={onRunAction} onSuccess={onSuccess} />}
+      {createKind && <section className="workspace-subscreen workspace-panel workspace-screen" aria-labelledby="attendance-create-title"><header><div><p>ATTENDANCE OPERATIONS</p><h2 id="attendance-create-title">{toHeading(createKind)}</h2></div><button className="icon-button" type="button" onClick={() => setCreateKind(null)} aria-label="Close attendance form">x</button></header><form className="master-form" onSubmit={submitAttendanceOperation}>{createKind === "attendance" && <><label>Class session<select name="session_id" required>{classSessions.filter((item) => item.state !== "locked" && item.state !== "cancelled").map((item) => <option key={item.id} value={item.id}>{formatDate(item.session_date)} · {shortId(item.period_id)}</option>)}</select></label><label>Student<select name="student_id" required>{students.map((item) => <option key={item.id} value={item.id}>{item.person.full_name} · {item.registration_number}</option>)}</select></label><label>Status<select name="status" defaultValue="present"><option value="present">Present</option><option value="absent">Absent</option><option value="late">Late</option><option value="excused">Excused</option></select></label></>}{createKind === "correction" && <><label>Locked attendance record<select name="record_id" required>{attendanceRecords.filter((item) => item.state === "locked").map((item) => <option key={item.id} value={item.id}>{students.find((student) => student.id === item.student_id)?.person.full_name ?? shortId(item.student_id)} · {item.status}</option>)}</select></label><label>Reason<textarea name="reason" required minLength={3} rows={4} /></label></>}{createKind === "leave" && <><label>Person<select name="person_id" required>{people.map((item) => <option key={item.id} value={item.id}>{item.full_name} · {item.email ?? item.mobile_number}</option>)}</select></label><div className="form-grid"><label>Starts on<input name="start_date" type="date" required /></label><label>Ends on<input name="end_date" type="date" required /></label></div><label>Leave type<select name="leave_type" defaultValue="casual"><option value="casual">Casual</option><option value="sick">Sick</option><option value="earned">Earned</option><option value="duty">Duty</option><option value="other">Other</option></select></label><label>Reason<textarea name="reason" rows={4} /></label></>}<footer><button type="button" onClick={() => setCreateKind(null)}>Cancel</button><button className="primary-action" type="submit">Submit</button></footer></form></section>}
+      {showCorrectionForm && <AttendanceCorrectionScreen attendanceRecords={attendanceRecords} students={students} onClose={() => setShowCorrectionForm(false)} onRunAction={onRunAction} onSuccess={onSuccess} />}
     </section>
   );
 }
@@ -2947,7 +3273,7 @@ function AttendanceSummaryPanel({ students, selectedStudentId, summary, error, o
 }
 
 /** Render and submit an attendance correction with an explicit requested outcome. */
-function AttendanceCorrectionDialog({ attendanceRecords, students, onClose, onRunAction, onSuccess }: Readonly<{ attendanceRecords: AttendanceRecordSummary[]; students: StudentSummary[]; onClose: () => void; onRunAction: (action: () => Promise<void>) => Promise<void>; onSuccess: (message: string) => void }>) {
+function AttendanceCorrectionScreen({ attendanceRecords, students, onClose, onRunAction, onSuccess }: Readonly<{ attendanceRecords: AttendanceRecordSummary[]; students: StudentSummary[]; onClose: () => void; onRunAction: (action: () => Promise<void>) => Promise<void>; onSuccess: (message: string) => void }>) {
   const lockedRecords = attendanceRecords.filter((item) => item.state === "locked");
 
   /** Create one reasoned correction request for a locked attendance row. */
@@ -2961,12 +3287,13 @@ function AttendanceCorrectionDialog({ attendanceRecords, students, onClose, onRu
     });
   }
 
-  return <dialog className="modal-panel modal-inline" open aria-labelledby="attendance-correction-title"><header><div><p>ATTENDANCE OPERATIONS</p><h2 id="attendance-correction-title">Request correction</h2></div><button className="icon-button" type="button" onClick={onClose} aria-label="Close correction form">x</button></header><form className="master-form" onSubmit={submit}>{lockedRecords.length === 0 ? <EmptyState message="Lock an attendance register before requesting a correction." /> : <><label>Locked attendance record<select name="record_id" required>{lockedRecords.map((item) => <option key={item.id} value={item.id}>{students.find((student) => student.id === item.student_id)?.person.full_name ?? shortId(item.student_id)} · {item.status}</option>)}</select></label><label>Requested status<select name="requested_status" defaultValue="absent"><option value="present">Present</option><option value="absent">Absent</option><option value="late">Late</option><option value="excused">Excused</option></select></label><label>Reason<textarea name="reason" required minLength={3} rows={4} /></label></>}<footer><button type="button" onClick={onClose}>Cancel</button>{lockedRecords.length > 0 && <button className="primary-action" type="submit">Submit correction</button>}</footer></form></dialog>;
+  return <section className="workspace-subscreen workspace-panel workspace-screen" aria-labelledby="attendance-correction-title"><header><div><p>ATTENDANCE OPERATIONS</p><h2 id="attendance-correction-title">Request correction</h2></div><button className="icon-button" type="button" onClick={onClose} aria-label="Close correction form">x</button></header><form className="master-form" onSubmit={submit}>{lockedRecords.length === 0 ? <EmptyState message="Lock an attendance register before requesting a correction." /> : <><label>Locked attendance record<select name="record_id" required>{lockedRecords.map((item) => <option key={item.id} value={item.id}>{students.find((student) => student.id === item.student_id)?.person.full_name ?? shortId(item.student_id)} · {item.status}</option>)}</select></label><label>Requested status<select name="requested_status" defaultValue="absent"><option value="present">Present</option><option value="absent">Absent</option><option value="late">Late</option><option value="excused">Excused</option></select></label><label>Reason<textarea name="reason" required minLength={3} rows={4} /></label></>}<footer><button type="button" onClick={onClose}>Cancel</button>{lockedRecords.length > 0 && <button className="primary-action" type="submit">Submit correction</button>}</footer></form></section>;
 }
 
 /** Render the complete fees setup, collection, adjustment, and reconciliation workspace. */
 function FeesSection({ data, onRunAction, onSuccess }: Readonly<{ data: OperationalData; onRunAction: (action: () => Promise<void>) => Promise<void>; onSuccess: (message: string) => void }>) {
   const [ledger, setLedger] = useState(data.ledger);
+  const [receiptDocument, setReceiptDocument] = useState<ReceiptDocument | null>(null);
   const today = new Date().toISOString().slice(0, 10);
   const activeCashierSession = data.cashierSessions.find((item) => item.state === "open") ?? null;
   const studentName = (studentId: string) => data.students.find((item) => item.id === studentId)?.person.full_name ?? shortId(studentId);
@@ -2989,6 +3316,14 @@ function FeesSection({ data, onRunAction, onSuccess }: Readonly<{ data: Operatio
       return;
     }
     await onRunAction(async () => setLedger(await getStudentLedger(studentId)));
+  }
+
+  /** Issue idempotently and open the authoritative printable receipt. */
+  async function openReceipt(paymentId: string): Promise<void> {
+    await onRunAction(async () => {
+      await issuePaymentReceipt(paymentId);
+      setReceiptDocument(await getPaymentReceiptDocument(paymentId));
+    });
   }
 
   return <section className="workspace-stack">
@@ -3023,7 +3358,7 @@ function FeesSection({ data, onRunAction, onSuccess }: Readonly<{ data: Operatio
     <article className="sample-table-shell"><header><div><h2>Invoices</h2><span>{data.invoices.length} source records</span></div></header>{data.invoices.length === 0 ? <EmptyState message="No invoices found." /> : <div className="sample-table">{data.invoices.map((row, index) => <article key={row.id}><span className="row-index">{String(index + 1).padStart(2, "0")}</span><div><strong>{row.invoice_number} · {studentName(row.student_id)}</strong><p>{formatCurrency(row.total_amount)} billed · {formatCurrency(row.allocated_amount)} allocated · due {formatDate(row.due_on)}</p></div><span className="row-status">{formatCurrency(row.outstanding_amount)} due</span></article>)}</div>}</article>
 
     <article className="sample-table-shell"><header><div><h2>Payments and adjustments</h2><span>{data.payments.length} immutable payment records</span></div></header>
-      {data.payments.length === 0 ? <EmptyState message="No payments found." /> : <div className="sample-table">{data.payments.map((row, index) => <article key={row.id}><span className="row-index">{String(index + 1).padStart(2, "0")}</span><div><strong>{row.reference_number} · {studentName(row.student_id)}</strong><p>{row.method} · {formatDateTime(row.paid_on)} · {formatCurrency(row.allocations.reduce((sum, item) => sum + Number(item.amount), 0))}</p></div><div className="inline-actions"><span className="row-status">{row.state}</span>{row.state === "posted" && <><button className="row-action" type="button" onClick={() => onRunAction(async () => { const receipt = await issuePaymentReceipt(row.id); onSuccess(`Receipt ${receipt.receipt_number} issued.`); })}>Receipt</button><button className="row-action" type="button" onClick={() => onRunAction(async () => { await reverseFeePayment(row.id, "Operator-entered collection reversal"); onSuccess("Payment reversed."); })}>Reverse</button></>}</div></article>)}</div>}
+      {data.payments.length === 0 ? <EmptyState message="No payments found." /> : <div className="sample-table">{data.payments.map((row, index) => <article key={row.id}><span className="row-index">{String(index + 1).padStart(2, "0")}</span><div><strong>{row.reference_number} · {studentName(row.student_id)}</strong><p>{row.method} · {formatDateTime(row.paid_on)} · {formatCurrency(row.allocations.reduce((sum, item) => sum + Number(item.amount), 0))}</p></div><div className="inline-actions"><span className="row-status">{row.state}</span>{row.state === "posted" && <><button className="row-action" type="button" onClick={() => void openReceipt(row.id)}><Printer aria-hidden="true" /> Print receipt</button><button className="row-action" type="button" onClick={() => onRunAction(async () => { await reverseFeePayment(row.id, "Operator-entered collection reversal"); onSuccess("Payment reversed."); })}>Reverse</button></>}</div></article>)}</div>}
       <div className="operations-grid"><form className="master-form" onSubmit={(event) => submit(event, async (form) => { await createFeeConcession({ invoice_line_id: getFormText(form, "invoice_line_id"), amount: Number(getFormText(form, "amount")), reason: getFormText(form, "reason") }); }, "Concession requested.")}><h3>Request concession</h3><label>Invoice line<select name="invoice_line_id" required>{data.invoices.flatMap((invoice) => invoice.lines.map((line) => <option key={line.id} value={line.id}>{invoice.invoice_number} · {formatCurrency(line.amount)}</option>))}</select></label><label>Amount<input name="amount" type="number" min="0.01" step="0.01" required /></label><label>Reason<input name="reason" required minLength={3} /></label><button type="submit" disabled={data.invoices.every((item) => item.lines.length === 0)}>Request</button></form>
       <form className="master-form" onSubmit={(event) => submit(event, async (form) => { await createFeeRefund({ payment_id: getFormText(form, "payment_id"), amount: Number(getFormText(form, "amount")), reason: getFormText(form, "reason") }); }, "Refund requested.")}><h3>Request refund</h3><label>Payment<select name="payment_id" required>{data.payments.filter((item) => item.state === "posted").map((item) => <option key={item.id} value={item.id}>{item.reference_number}</option>)}</select></label><label>Amount<input name="amount" type="number" min="0.01" step="0.01" required /></label><label>Reason<input name="reason" required minLength={3} /></label><button type="submit" disabled={data.payments.length === 0}>Request</button></form></div>
       {[...data.feeConcessions.map((item) => ({ ...item, kind: "Concession" as const })), ...data.feeRefunds.map((item) => ({ ...item, kind: "Refund" as const }))].filter((item) => item.state === "pending").map((item) => <div className="approval-strip" key={`${item.kind}-${item.id}`}><div><strong>{item.kind} · {formatCurrency(item.amount)}</strong><p>{item.reason}</p></div><div className="inline-actions"><button type="button" onClick={() => onRunAction(async () => { if (item.kind === "Concession") await reviewFeeConcession(item.id, "approved"); else await reviewFeeRefund(item.id, "approved"); onSuccess(`${item.kind} approved.`); })}>Approve</button><button type="button" onClick={() => onRunAction(async () => { if (item.kind === "Concession") await reviewFeeConcession(item.id, "rejected"); else await reviewFeeRefund(item.id, "rejected"); onSuccess(`${item.kind} rejected.`); })}>Reject</button></div></div>)}
@@ -3033,12 +3368,50 @@ function FeesSection({ data, onRunAction, onSuccess }: Readonly<{ data: Operatio
       <article className="sample-table-shell"><header><div><h2>Gateway reconciliation</h2><span>{data.gatewayReconciliations.length} comparisons</span></div></header><form className="master-form" onSubmit={(event) => submit(event, async (form) => { await createGatewayReconciliation({ payment_id: nullableString(form.get("payment_id")), provider: getFormText(form, "provider"), external_reference: getFormText(form, "external_reference"), settled_amount: Number(getFormText(form, "settled_amount")), details: nullableString(form.get("details")) }); }, "Gateway settlement reconciled.")}><label>Payment<select name="payment_id"><option value="">Unmatched settlement</option>{data.payments.map((item) => <option key={item.id} value={item.id}>{item.reference_number}</option>)}</select></label><div className="form-grid"><label>Provider<input name="provider" required /></label><label>External reference<input name="external_reference" required /></label></div><label>Settled amount<input name="settled_amount" type="number" min="0" step="0.01" required /></label><label>Details<input name="details" /></label><button type="submit">Reconcile</button></form></article></div>
 
     <article className="sample-table-shell"><header><div><h2>Student ledger</h2><span>{ledger ? `${ledger.total} entries` : "Select a student"}</span></div><label>Student<select value={ledger?.student_id ?? ""} onChange={selectLedgerStudent}><option value="">Select student</option>{data.students.map((student) => <option key={student.id} value={student.id}>{student.person.full_name}</option>)}</select></label></header>{!ledger ? <EmptyState message="Select a student to inspect the source-derived ledger." /> : <div className="ledger-shell"><div className="metric-grid"><Metric label="Invoiced" value={formatCurrency(ledger.invoiced_total)} detail="Total billed" icon={IndianRupee} tone="rust" /><Metric label="Paid" value={formatCurrency(ledger.paid_total)} detail="Net allocations" icon={CheckCircle2} tone="green" /><Metric label="Balance" value={formatCurrency(ledger.balance)} detail={studentName(ledger.student_id)} icon={AlertCircle} tone="blue" /><Metric label="Entries" value={String(ledger.total)} detail="Ledger movements" icon={Clock3} tone="gold" /></div><div className="sample-table">{ledger.items.map((entry, index) => <article key={`${entry.reference_id}-${entry.entry_date}`}><span className="row-index">{String(index + 1).padStart(2, "0")}</span><div><strong>{entry.reference_number}</strong><p>{entry.entry_type} · {formatDateTime(entry.entry_date)}</p></div><span className="row-status">{formatCurrency(entry.amount)}</span></article>)}</div></div>}</article>
+    {receiptDocument && <ReceiptDocumentScreen document={receiptDocument} onClose={() => setReceiptDocument(null)} />}
   </section>;
 }
 
+/** Render Student and Guardian fee records with access to previously issued receipts. */
+function FeeRecordsSection({ data, onRunAction }: Readonly<{ data: OperationalData; onRunAction: (action: () => Promise<void>) => Promise<void> }>) {
+  const [receiptDocument, setReceiptDocument] = useState<ReceiptDocument | null>(null);
+
+  /** Open an already-issued receipt without granting receipt issuance permission. */
+  async function openReceipt(paymentId: string): Promise<void> {
+    await onRunAction(async () => setReceiptDocument(await getPaymentReceiptDocument(paymentId)));
+  }
+
+  return <section className="workspace-stack">
+    <article className="sample-table-shell"><header><div><h2>Fee records</h2><span>{data.invoices.length} invoices</span></div></header>{data.invoices.length === 0 ? <EmptyState message="No fee invoices are linked to this account." /> : <div className="sample-table">{data.invoices.map((row, index) => <article key={row.id}><span className="row-index">{String(index + 1).padStart(2, "0")}</span><div><strong>{row.invoice_number}</strong><p>{formatCurrency(row.total_amount)} billed · due {formatDate(row.due_on)}</p></div><span className="row-status">{formatCurrency(row.outstanding_amount)} due</span></article>)}</div>}</article>
+    <article className="sample-table-shell"><header><div><h2>Payment receipts</h2><span>{data.payments.length} payments</span></div></header>{data.payments.length === 0 ? <EmptyState message="No payments are linked to this account." /> : <div className="sample-table">{data.payments.map((row, index) => <article key={row.id}><span className="row-index">{String(index + 1).padStart(2, "0")}</span><div><strong>{row.reference_number}</strong><p>{formatDateTime(row.paid_on)} · {formatCurrency(row.allocations.reduce((sum, item) => sum + Number(item.amount), 0))}</p></div><div className="inline-actions"><span className="row-status">{row.state}</span><button className="row-action" type="button" onClick={() => void openReceipt(row.id)}><Printer aria-hidden="true" /> Print receipt</button></div></article>)}</div>}</article>
+    {receiptDocument && <ReceiptDocumentScreen document={receiptDocument} onClose={() => setReceiptDocument(null)} />}
+  </section>;
+}
+
+/** Render one print-ready receipt without duplicating financial source data in the browser. */
+function ReceiptDocumentScreen({ document, onClose }: Readonly<{ document: ReceiptDocument; onClose: () => void }>) {
+  return <section className="workspace-subscreen workspace-panel workspace-screen workspace-screen-wide document-screen" aria-labelledby="receipt-document-title">
+    <header className="document-screen-header"><div><p>PAYMENT RECEIPT</p><h2 id="receipt-document-title">{document.receipt_number}</h2></div><div className="inline-actions"><button type="button" onClick={() => window.print()}><Printer aria-hidden="true" /> Print</button><button className="icon-button" type="button" onClick={onClose} aria-label="Close receipt">x</button></div></header>
+    <section className="receipt-paper" style={{ borderTopColor: document.primary_color }}>
+      <div className="receipt-brand"><div><span>{document.institution_short_name}</span><h3>{document.institution_name}</h3></div><strong>RECEIPT</strong></div>
+      <dl className="receipt-meta"><div><dt>Receipt number</dt><dd>{document.receipt_number}</dd></div><div><dt>Issued</dt><dd>{formatDateTime(document.issued_at)}</dd></div><div><dt>Student</dt><dd>{document.student_name}</dd></div><div><dt>Registration</dt><dd>{document.registration_number}</dd></div><div><dt>Payment reference</dt><dd>{document.payment_reference}</dd></div><div><dt>Payment date</dt><dd>{formatDateTime(document.paid_on)}</dd></div><div><dt>Method</dt><dd>{document.payment_method.replaceAll("_", " ")}</dd></div><div><dt>Status</dt><dd>{document.payment_state}</dd></div></dl>
+      <div className="receipt-lines"><div className="receipt-line receipt-line-heading"><span>Invoice</span><span>Amount</span></div>{document.allocations.map((allocation) => <div className="receipt-line" key={allocation.invoice_id}><span>{allocation.invoice_number}</span><strong>{formatCurrency(allocation.amount)}</strong></div>)}</div>
+      <div className="receipt-total"><span>Total received</span><strong>{formatCurrency(document.total_amount)}</strong></div>
+      {document.payment_note && <p className="receipt-note">Note: {document.payment_note}</p>}
+      <footer><span>Verification reference</span><strong>{document.verification_reference}</strong><p>This receipt is derived from the institution&apos;s immutable payment and allocation records.</p></footer>
+    </section>
+  </section>;
+}
+
+type OpenExaminationDocument =
+  | { kind: "hall-ticket"; document: HallTicketDocument }
+  | { kind: "grade-card"; document: GradeCardDocument }
+  | { kind: "transcript"; document: TranscriptDocument };
+
 /** Render the complete examination controller, logistics, marks, and publication workspace. */
-function ExaminationsSection({ data, onRunAction, onSuccess }: Readonly<{ data: OperationalData; onRunAction: (action: () => Promise<void>) => Promise<void>; onSuccess: (message: string) => void }>) {
+function ExaminationsSection({ data, canIssueDocuments, onRunAction, onSuccess }: Readonly<{ data: OperationalData; canIssueDocuments: boolean; onRunAction: (action: () => Promise<void>) => Promise<void>; onSuccess: (message: string) => void }>) {
   const today = new Date().toISOString().slice(0, 10);
+  const [openDocument, setOpenDocument] = useState<OpenExaminationDocument | null>(null);
   const studentName = (studentId: string) => data.students.find((item) => item.id === studentId)?.person.full_name ?? shortId(studentId);
   const roomName = (roomId: string | null) => data.examRooms.find((item) => item.id === roomId)?.name ?? (roomId ? shortId(roomId) : "Unassigned");
 
@@ -3052,8 +3425,26 @@ function ExaminationsSection({ data, onRunAction, onSuccess }: Readonly<{ data: 
     });
   }
 
+  /** Issue and open one selected examination document. */
+  async function issueAndOpen(kind: OpenExaminationDocument["kind"], sourceId: string): Promise<void> {
+    await onRunAction(async () => {
+      if (kind === "hall-ticket") {
+        await issueHallTicket(sourceId);
+        setOpenDocument({ kind, document: await getHallTicketDocument(sourceId) });
+      } else if (kind === "grade-card") {
+        await issueGradeCard(sourceId);
+        setOpenDocument({ kind, document: await getGradeCardDocument(sourceId) });
+      } else {
+        await issueTranscript(sourceId);
+        setOpenDocument({ kind, document: await getTranscriptDocument(sourceId) });
+      }
+    });
+  }
+
   return <section className="workspace-stack">
     <div className="metric-grid"><Metric label="Sessions" value={String(data.examSessions.length)} detail={`${data.examSchedules.length} schedules`} icon={CalendarDays} tone="blue" /><Metric label="Candidates" value={String(data.registrations.length)} detail={`${data.examSeats.length} seats assigned`} icon={UsersRound} tone="green" /><Metric label="Locked marks" value={String(Object.values(data.marksByRegistrationId).filter((item) => item.state === "locked").length)} detail={`${data.markAdjustments.filter((item) => item.state === "requested").length} adjustments pending`} icon={ClipboardCheck} tone="gold" /><Metric label="Published" value={String(data.results.filter((item) => item.state === "published").length)} detail="Reproducible outcomes" icon={GraduationCap} tone="rust" /></div>
+
+    {canIssueDocuments && <article className="sample-table-shell"><header><div><h2>Operational documents</h2><span>Issue from authoritative examination records</span></div></header><div className="document-action-grid"><section><h3>Hall tickets</h3>{data.registrations.filter((item) => item.eligibility === "eligible").map((item) => <button type="button" key={item.id} onClick={() => void issueAndOpen("hall-ticket", item.id)}><Printer aria-hidden="true" /> {studentName(item.student_id)}</button>)}</section><section><h3>Grade cards</h3>{data.results.filter((item) => item.state === "published").map((item) => <button type="button" key={item.id} onClick={() => void issueAndOpen("grade-card", item.id)}><Printer aria-hidden="true" /> {studentName(item.student_id)} · v{item.publication_version}</button>)}</section><section><h3>Transcripts</h3>{Array.from(new Set(data.results.filter((item) => item.state === "published").map((item) => item.student_id))).map((studentId) => <button type="button" key={studentId} onClick={() => void issueAndOpen("transcript", studentId)}><Printer aria-hidden="true" /> {studentName(studentId)}</button>)}</section></div></article>}
 
     <div className="operations-grid"><article className="sample-table-shell"><header><div><h2>Assessment configuration</h2><span>{data.assessmentSchemes.length} schemes · {data.gradeRules.length} grade bands</span></div></header>
       <form className="master-form" onSubmit={(event) => submit(event, async (form) => { await createAssessmentScheme({ subject_id: getFormText(form, "subject_id"), program_id: getFormText(form, "program_id"), term_id: getFormText(form, "term_id"), max_marks: Number(getFormText(form, "max_marks")), pass_marks: Number(getFormText(form, "pass_marks")) }); }, "Assessment scheme created.")}><div className="form-grid"><label>Subject<select name="subject_id" required>{data.examSubjects.map((item) => <option key={item.id} value={item.id}>{item.code} · {item.name}</option>)}</select></label><label>Program<select name="program_id" required>{data.examPrograms.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div><label>Term<select name="term_id" required>{data.examTerms.map((item) => <option key={item.id} value={item.id}>{item.display_name}</option>)}</select></label><div className="form-grid"><label>Maximum marks<input name="max_marks" type="number" min="1" step="0.01" required /></label><label>Pass marks<input name="pass_marks" type="number" min="0" step="0.01" required /></label></div><button type="submit" disabled={data.examTerms.length === 0}>Add scheme</button></form>
@@ -3068,7 +3459,41 @@ function ExaminationsSection({ data, onRunAction, onSuccess }: Readonly<{ data: 
       <form className="master-form" onSubmit={(event) => submit(event, async (form) => { await createMarkAdjustment({ registration_id: getFormText(form, "registration_id"), revised_marks: Number(getFormText(form, "revised_marks")), reason: getFormText(form, "reason") }); }, "Mark adjustment requested.")}><h3>Moderation or revaluation</h3><label>Locked registration<select name="registration_id" required>{data.registrations.filter((item) => data.marksByRegistrationId[item.id]?.state === "locked").map((item) => <option key={item.id} value={item.id}>{studentName(item.student_id)} · {data.marksByRegistrationId[item.id].marks_obtained}</option>)}</select></label><div className="form-grid"><label>Revised marks<input name="revised_marks" type="number" min="0" step="0.01" required /></label><label>Reason<input name="reason" required minLength={3} /></label></div><button type="submit">Request adjustment</button></form>{data.markAdjustments.filter((item) => item.state === "requested").map((item) => <div className="approval-strip" key={item.id}><div><strong>{item.original_marks} → {item.revised_marks}</strong><p>{item.reason}</p></div><div className="inline-actions"><button type="button" onClick={() => onRunAction(async () => { await reviewMarkAdjustment(item.id, "approved"); onSuccess("Mark adjustment approved."); })}>Approve</button><button type="button" onClick={() => onRunAction(async () => { await reviewMarkAdjustment(item.id, "rejected"); onSuccess("Mark adjustment rejected."); })}>Reject</button></div></div>)}</article>
 
     <article className="sample-table-shell"><header><div><h2>Results and transcripts</h2><span>{data.results.length} published outcomes</span></div>{data.examSessions.length > 0 && <button className="primary-action" type="button" onClick={() => onRunAction(async () => { const result = await publishExamResults(data.examSessions[0].id); onSuccess(`${result.published_count} results published.`); })}>Publish session</button>}</header>{data.results.length === 0 ? <EmptyState message="No published results found." /> : <div className="sample-table">{data.results.map((row, index) => <article key={row.id}><span className="row-index">{String(index + 1).padStart(2, "0")}</span><div><strong>{studentName(row.student_id)} · {row.grade}</strong><p>{row.percentage}% · GPA {row.gpa} · {row.result} · version {row.publication_version}</p></div><div className="inline-actions"><span className="row-status">{row.state}</span>{row.state === "published" ? <button type="button" onClick={() => onRunAction(async () => { await reopenExamResult(row.id, "Controller correction review"); onSuccess("Result reopened."); })}>Reopen</button> : <button type="button" onClick={() => onRunAction(async () => { await republishExamResult(row.id); onSuccess("Result republished."); })}>Republish</button>}</div></article>)}</div>}</article>
+    {openDocument && <ExaminationDocumentScreen item={openDocument} onClose={() => setOpenDocument(null)} />}
   </section>;
+}
+
+/** Render scoped Student examination outcomes and already-issued documents. */
+function ExaminationRecordsSection({ data, onRunAction }: Readonly<{ data: OperationalData; onRunAction: (action: () => Promise<void>) => Promise<void> }>) {
+  const [openDocument, setOpenDocument] = useState<OpenExaminationDocument | null>(null);
+
+  /** Retrieve one issued document without granting issuance rights. */
+  async function retrieve(kind: OpenExaminationDocument["kind"], sourceId: string): Promise<void> {
+    await onRunAction(async () => {
+      if (kind === "hall-ticket") {
+        setOpenDocument({ kind, document: await getHallTicketDocument(sourceId) });
+      } else if (kind === "grade-card") {
+        setOpenDocument({ kind, document: await getGradeCardDocument(sourceId) });
+      } else {
+        setOpenDocument({ kind, document: await getTranscriptDocument(sourceId) });
+      }
+    });
+  }
+
+  return <section className="workspace-stack"><article className="sample-table-shell"><header><div><h2>Hall tickets</h2><span>{data.registrations.length} registrations</span></div></header>{data.registrations.length === 0 ? <EmptyState message="No examination registrations are linked to this account." /> : <div className="sample-table">{data.registrations.map((row) => <article key={row.id}><div><strong>Exam registration</strong><p>{row.eligibility}</p></div><button type="button" onClick={() => void retrieve("hall-ticket", row.id)}><Printer aria-hidden="true" /> Hall ticket</button></article>)}</div>}</article><article className="sample-table-shell"><header><div><h2>Grade cards and transcripts</h2><span>{data.results.length} published outcomes</span></div></header>{data.results.length === 0 ? <EmptyState message="No published results are linked to this account." /> : <div className="sample-table">{data.results.map((row) => <article key={row.id}><div><strong>{row.grade} · {row.result}</strong><p>{row.percentage}% · GPA {row.gpa} · version {row.publication_version}</p></div><div className="inline-actions"><button type="button" onClick={() => void retrieve("grade-card", row.id)}><Printer aria-hidden="true" /> Grade card</button><button type="button" onClick={() => void retrieve("transcript", row.student_id)}><Printer aria-hidden="true" /> Transcript</button></div></article>)}</div>}</article>{openDocument && <ExaminationDocumentScreen item={openDocument} onClose={() => setOpenDocument(null)} />}</section>;
+}
+
+/** Render one printable hall ticket, grade card, or transcript in a shared document shell. */
+function ExaminationDocumentScreen({ item, onClose }: Readonly<{ item: OpenExaminationDocument; onClose: () => void }>) {
+  const document = item.document;
+  const number = item.kind === "hall-ticket" ? item.document.ticket_number : item.kind === "grade-card" ? item.document.card_number : item.document.transcript_number;
+  const title = item.kind === "hall-ticket" ? "HALL TICKET" : item.kind === "grade-card" ? "GRADE CARD" : "ACADEMIC TRANSCRIPT";
+  return <section className="workspace-subscreen workspace-panel workspace-screen workspace-screen-wide document-screen" aria-labelledby="examination-document-title"><header className="document-screen-header"><div><p>{title}</p><h2 id="examination-document-title">{number}</h2></div><div className="inline-actions"><button type="button" onClick={() => window.print()}><Printer aria-hidden="true" /> Print</button><button className="icon-button" type="button" onClick={onClose} aria-label={`Close ${title.toLowerCase()}`}>x</button></div></header><section className="receipt-paper academic-document" style={{ borderTopColor: document.primary_color }}><div className="receipt-brand"><div><span>{document.institution_short_name}</span><h3>{document.institution_name}</h3></div><strong>{title}</strong></div><dl className="receipt-meta"><div><dt>Document number</dt><dd>{number}</dd></div><div><dt>Issued</dt><dd>{formatDateTime(document.issued_at)}</dd></div><div><dt>Student</dt><dd>{document.student_name}</dd></div><div><dt>Registration</dt><dd>{document.registration_number}</dd></div></dl>{item.kind === "hall-ticket" && <><div className="document-highlight"><span>Examination term</span><strong>{item.document.term_name}</strong></div><div className="document-table"><div className="document-row document-row-heading"><span>Subject</span><span>Date</span><span>Room / seat</span></div>{item.document.exams.map((exam) => <div className="document-row" key={exam.registration_id}><span><strong>{exam.subject_code}</strong><small>{exam.subject_name}</small></span><span>{formatDate(exam.exam_date)}</span><span>{exam.room_name ?? "Unassigned"}{exam.seat_number ? ` / ${exam.seat_number}` : ""}</span></div>)}</div></>}{item.kind === "grade-card" && <ResultDocumentBody result={item.document} />}{item.kind === "transcript" && <><div className="document-highlight"><span>Cumulative GPA</span><strong>{item.document.cgpa}</strong></div>{item.document.results.map((result) => <section className="transcript-term" key={`${result.result_id}-${result.publication_version}`}><h4>{result.term_name} · Version {result.publication_version}</h4><ResultDocumentBody result={result} /></section>)}</>}<footer><span>Verification reference</span><strong>{document.verification_reference}</strong><p>This document is derived from immutable examination publication and issuance records.</p></footer></section></section>;
+}
+
+/** Render one aggregate result and any available immutable subject snapshots. */
+function ResultDocumentBody({ result }: Readonly<{ result: GradeCardDocument | TranscriptDocument["results"][number] }>) {
+  return <><div className="document-highlight"><span>Outcome</span><strong>{result.grade} · {result.result} · GPA {result.gpa}</strong><small>{result.total_marks} / {result.total_max_marks} · {result.percentage}%</small></div>{result.lines.length === 0 ? <p className="receipt-note">Subject-level lines were not retained for this legacy published result.</p> : <div className="document-table"><div className="document-row document-row-heading"><span>Subject</span><span>Marks</span><span>Grade</span></div>{result.lines.map((line) => <div className="document-row" key={`${line.subject_code}-${line.subject_name}`}><span><strong>{line.subject_code}</strong><small>{line.subject_name}</small></span><span>{line.marks_obtained} / {line.max_marks}</span><span>{line.grade} · {line.grade_point}</span></div>)}</div>}</>;
 }
 
 /** Render notices module content with publish actions. */
@@ -3111,15 +3536,23 @@ function NoticesSection({
 /** Render published event discovery and own-record registration for a student actor. */
 function StudentEventsSection({ events, students, onRunAction, onSuccess }: Readonly<{ events: ActivitySummary[]; students: StudentSummary[]; onRunAction: (action: () => Promise<void>) => Promise<void>; onSuccess: (message: string) => void }>) {
   const [registrations, setRegistrations] = useState<EventRegistrationSummary[]>([]);
+  const [certificates, setCertificates] = useState<ActivityCertificateSummary[]>([]);
+  const [certificateDocument, setCertificateDocument] = useState<ActivityCertificateDocument | null>(null);
   const [loadError, setLoadError] = useState("");
   const student = students[0];
 
   useEffect(() => {
     let active = true;
     setLoadError("");
-    Promise.all(events.map((event) => getEventRegistrations(event.id)))
-      .then((pages) => {
-        if (active) setRegistrations(pages.flatMap((page) => page.items));
+    Promise.all([
+      Promise.all(events.map((event) => getEventRegistrations(event.id))),
+      Promise.all(events.map((event) => getActivityCertificates(event.id))),
+    ])
+      .then(([registrationPages, certificatePages]) => {
+        if (active) {
+          setRegistrations(registrationPages.flatMap((page) => page.items));
+          setCertificates(certificatePages.flatMap((page) => page.items));
+        }
       })
       .catch((error_) => {
         if (active) setLoadError(getApiErrorMessage(error_));
@@ -3131,8 +3564,10 @@ function StudentEventsSection({ events, students, onRunAction, onSuccess }: Read
     {loadError && <Banner tone="error" message={loadError} />}
     <article className="sample-table-shell"><header><div><h2>Published events</h2><span>{events.length} available events</span></div></header>{events.length === 0 ? <EmptyState message="No published events are available." /> : <div className="sample-table">{events.map((event, index) => {
       const registration = registrations.find((item) => item.activity_id === event.id && item.student_id === student?.id);
-      return <article key={event.id}><span className="row-index">{String(index + 1).padStart(2, "0")}</span><div><strong>{event.title}</strong><p>{event.activity_type} · {formatDate(event.activity_date)} · {event.venue ?? "Venue pending"}{event.eligibility_notes ? ` · ${event.eligibility_notes}` : ""}</p></div>{registration ? <span className="row-status">{registration.state}</span> : <button type="button" disabled={!student} onClick={() => { if (student) void onRunAction(async () => { await registerForActivity(event.id, student.id); onSuccess("Event registration submitted."); }); }}>Register</button>}</article>;
+      const certificate = certificates.find((item) => item.activity_id === event.id && item.student_id === student?.id && !item.revoked_at);
+      return <article key={event.id}><span className="row-index">{String(index + 1).padStart(2, "0")}</span><div><strong>{event.title}</strong><p>{event.activity_type} · {formatDate(event.activity_date)} · {event.venue ?? "Venue pending"}{event.eligibility_notes ? ` · ${event.eligibility_notes}` : ""}</p></div><div className="inline-actions">{registration ? <span className="row-status">{registration.state}</span> : <button type="button" disabled={!student} onClick={() => { if (student) void onRunAction(async () => { await registerForActivity(event.id, student.id); onSuccess("Event registration submitted."); }); }}>Register</button>}{certificate && <button type="button" onClick={() => void onRunAction(async () => setCertificateDocument(await getActivityCertificateDocument(event.id, certificate.id)))}><Printer aria-hidden="true" /> Certificate</button>}</div></article>;
     })}</div>}</article>
+    {certificateDocument && <CertificateDocumentScreen document={certificateDocument} kind="activity" onClose={() => setCertificateDocument(null)} />}
   </section>;
 }
 
@@ -3159,6 +3594,7 @@ function EventsSection({
   const [teamMembers, setTeamMembers] = useState<ActivityTeamMemberSummary[]>([]);
   const [expenses, setExpenses] = useState<ActivityExpenseSummary[]>([]);
   const [certificates, setCertificates] = useState<ActivityCertificateSummary[]>([]);
+  const [certificateDocument, setCertificateDocument] = useState<ActivityCertificateDocument | null>(null);
   const [points, setPoints] = useState<ActivityPointSummary[]>([]);
   const [eventRegistrations, setEventRegistrations] = useState(registrations);
   const [selectedClubId, setSelectedClubId] = useState("");
@@ -3296,13 +3732,21 @@ function EventsSection({
             <header><div><h2>Outcomes</h2><span>{certificates.length} certificates · {points.reduce((total, item) => total + item.points, 0)} points</span></div></header>
             {attendedRegistrations.map((registration) => <article className="detail-summary" key={registration.id}><div><strong>{students.find((item) => item.id === registration.student_id)?.person.full_name ?? shortId(registration.student_id)}</strong><p>Attended participant</p></div><button type="button" disabled={certificates.some((item) => item.registration_id === registration.id)} onClick={() => mutate(() => issueActivityCertificate(selectedEvent.id, registration.id), "Certificate issued.")}>Issue certificate</button></article>)}
             <form className="master-form" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); mutate(() => awardActivityPoints(selectedEvent.id, { student_id: getFormText(form, "student_id"), points: Number(getFormText(form, "points")), reason: getFormText(form, "reason") }), "Activity points awarded."); }}><label>Attended student<select name="student_id">{attendedRegistrations.map((item) => <option key={item.id} value={item.student_id}>{students.find((student) => student.id === item.student_id)?.person.full_name ?? shortId(item.student_id)}</option>)}</select></label><div className="form-grid"><label>Points<input name="points" type="number" min={1} required /></label><label>Reason<input name="reason" required /></label></div><button type="submit">Award points</button></form>
-            <div className="sample-table">{certificates.map((item) => <article key={item.id}><div><strong>{item.serial_number}</strong><p>Issued {formatDate(item.issued_at)}</p></div><span className="row-status">verified</span></article>)}{points.map((item) => <article key={item.id}><div><strong>{item.points} points</strong><p>{item.reason}</p></div></article>)}{achievements.filter((item) => item.activity_id === selectedEvent.id).map((item) => <article key={item.id}><div><strong>{item.title}</strong><p>Achievement · {shortId(item.student_id)}</p></div></article>)}</div>
+            <div className="sample-table">{certificates.map((item) => <article key={item.id}><div><strong>{item.serial_number}</strong><p>Issued {formatDate(item.issued_at)}</p></div><div className="inline-actions"><span className="row-status">verified</span><button type="button" onClick={() => void getActivityCertificateDocument(item.activity_id, item.id).then(setCertificateDocument)}><Printer aria-hidden="true" /> Print certificate</button></div></article>)}{points.map((item) => <article key={item.id}><div><strong>{item.points} points</strong><p>{item.reason}</p></div></article>)}{achievements.filter((item) => item.activity_id === selectedEvent.id).map((item) => <article key={item.id}><div><strong>{item.title}</strong><p>Achievement · {shortId(item.student_id)}</p></div></article>)}</div>
             <form className="master-form" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); mutate(() => createAchievement({ activity_id: selectedEvent.id, student_id: getFormText(form, "student_id"), title: getFormText(form, "title"), certificate_ref: null }), "Achievement recorded."); }}><label>Participant<select name="student_id">{selectedRegistrations.filter((item) => ["approved", "attended"].includes(item.state)).map((item) => <option key={item.id} value={item.student_id}>{students.find((student) => student.id === item.student_id)?.person.full_name ?? shortId(item.student_id)}</option>)}</select></label><label>Achievement<input name="title" required /></label><button type="submit">Record achievement</button></form>
           </article>
         </section>
       </>}
+      {certificateDocument && <CertificateDocumentScreen document={certificateDocument} kind="activity" onClose={() => setCertificateDocument(null)} />}
     </section>
   );
+}
+
+/** Render one printable requested or activity participation certificate. */
+function CertificateDocumentScreen({ document, kind, onClose }: Readonly<{ document: StudentCertificateDocument | ActivityCertificateDocument; kind: "requested" | "activity"; onClose: () => void }>) {
+  const title = kind === "activity" ? "CERTIFICATE OF PARTICIPATION" : `${(document as StudentCertificateDocument).certificate_type.toUpperCase()} CERTIFICATE`;
+  const statement = kind === "activity" ? `This certifies that ${document.student_name} participated in ${(document as ActivityCertificateDocument).activity_title}.` : `This certifies that ${document.student_name}, registration ${document.registration_number}, is a bona fide student of this institution.`;
+  return <section className="workspace-subscreen workspace-panel workspace-screen workspace-screen-wide document-screen" aria-labelledby="certificate-document-title"><header className="document-screen-header"><div><p>CERTIFICATE</p><h2 id="certificate-document-title">{document.verification_reference}</h2></div><div className="inline-actions"><button type="button" onClick={() => window.print()}><Printer aria-hidden="true" /> Print</button><button className="icon-button" type="button" onClick={onClose} aria-label="Close certificate">x</button></div></header><section className="receipt-paper certificate-paper" style={{ borderTopColor: document.primary_color }}><div className="receipt-brand"><div><span>{document.institution_short_name}</span><h3>{document.institution_name}</h3></div></div><div className="certificate-content"><span>{title}</span><h3>{document.student_name}</h3><p>{statement}</p>{kind === "activity" ? <p>{(document as ActivityCertificateDocument).activity_type} · {formatDate((document as ActivityCertificateDocument).activity_date)} · {(document as ActivityCertificateDocument).venue ?? "Institution venue"}</p> : <p>Purpose: {(document as StudentCertificateDocument).purpose}</p>}</div><footer><span>Verification reference</span><strong>{document.verification_reference}</strong><p>Issued {formatDateTime(document.issued_at)} from authoritative Student and issuance records.</p></footer></section></section>;
 }
 
 /** Render one compact loading state for section refreshes. */

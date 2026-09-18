@@ -1,8 +1,8 @@
 # 4by4 End-to-End College Management Platform
 
-4by4 College Management System (CMS) is a planned multi-tenant web platform for managing the complete academic and administrative operations of colleges. It will bring admissions, students, academics, attendance, fees, examinations, staff, communication, and campus services into one connected system.
+4by4 College Management System (CMS) is a multi-tenant web platform for managing connected academic and administrative college operations. The current repository contains a locally implemented PostgreSQL/FastAPI/React application plus product, architecture, module, validation, and deployment-planning documents.
 
-This repository currently contains the product and technical planning documents. Implementation will be delivered module by module, beginning with the common platform and the core student journey.
+Implemented and planned boundaries are tracked in [Implementation Status](docs/implementation-status.md). Local implementation is not an AWS deployment or production-readiness claim.
 
 ## What Multi-Tenant Means
 
@@ -22,6 +22,8 @@ One hosted application can serve many colleges. Each college is a separate **ten
 | [Demo Implementation Plan](docs/08-demo-implementation-plan.md) | Product and development teams | Build sequence, acceptance criteria, tests, and demo walkthrough |
 | [Multi-Tenant Demo Decision](docs/09-multi-tenant-demo-decision.md) | Product and development teams | Tenant identity, isolation, switching, branding, and seed strategy |
 | [Authoritative Implementation Plan](docs/10-authoritative-implementation-plan.md) | Product and engineering teams | Complete role model, module sequence, delivery rules, and completion gates |
+| [Portal UI and UX Decisions](docs/11-portal-ui-ux-decisions.md) | Product and engineering teams | Approved no-popup workspace screens and role dashboard design |
+| [AWS Demo Deployment Plan](docs/12-aws-demo-deployment-plan.md) | Engineering and operations | Demo-only AWS architecture, release gates, rollback, and limitations |
 | [Implementation Status](docs/implementation-status.md) | Everyone | Current implementation state, limitations, validation, and next review gate |
 | [Module Catalogue](docs/modules/README.md) | Product and engineering | Per-screen purpose, workflows, rules, data, UI status, and acceptance criteria |
 
@@ -44,9 +46,12 @@ Library, hostel, transport, placement, activities, complete HR/payroll, and full
 
 ## Current Delivery Focus
 
-Before building the complete first release, the project will deliver a smaller working demo for two college tenants: **INDUS ARTS & SCIENCE INTERNATIONAL COLLEGE** and **INDUS LAW COLLEGE**. The demo will prove tenant isolation and show connected student, academic, attendance, fee, notice, and dashboard workflows using realistic sample data.
+The repository supports a synthetic working demo for two college tenants: **INDUS ARTS & SCIENCE INTERNATIONAL COLLEGE** and **INDUS LAW COLLEGE**. The demo proves tenant isolation and shows connected student, academic, attendance, fee, examination, notice, event, document, and dashboard workflows using synthetic data.
 
-The demo boundary is defined in [Demo Scope and Experience](docs/07-demo-scope-and-experience.md). Production implementation now follows the [Authoritative Implementation Plan](docs/10-authoritative-implementation-plan.md); the older demo plan remains a record of the prototype scope.
+The demo boundary is defined in [Demo Scope and Experience](docs/07-demo-scope-and-experience.md).
+Production implementation follows the [Authoritative Implementation Plan](docs/10-authoritative-implementation-plan.md);
+the older demo plan remains a record of the prototype scope. AWS preparation is documented in the
+[AWS Demo Deployment Plan](docs/12-aws-demo-deployment-plan.md); no deployment is claimed.
 
 Production Increment 1 now includes the PostgreSQL tenancy and authorization foundation, the full
 baseline permission and role-template catalogue, and idempotent onboarding for both initial INDUS
@@ -73,7 +78,8 @@ and revoke all sessions for a selected membership. Platform authentication is is
 `/api/v1/platform`: its audience-restricted credentials can list the tenant directory and control
 tenant lifecycle, but cannot access tenant-bound routes or tenant-owned records. The college login
 frontend now authenticates the two seeded College Administrators, restores sessions through refresh
-rotation, and revokes the backend session on sign-out. Operational module records remain previews.
+rotation, and revokes the backend session on sign-out. Implemented operational modules use
+PostgreSQL-backed source records; planned expansion modules remain hidden from navigation.
 
 ## Guiding Principles
 

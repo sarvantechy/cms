@@ -1,6 +1,6 @@
 # Communications and Role Portals
 
-**Status:** Communications and eight permission-scoped tenant role portals are implemented and interactively validated locally with PostgreSQL persistence and forced RLS. External email/SMS provider adapters remain release work.
+**Status:** Communications and nine permission-scoped tenant role portals are implemented and interactively validated locally with PostgreSQL persistence and forced RLS. External email/SMS provider adapters remain release work.
 
 ## Purpose
 Deliver targeted notices, circulars, announcements, acknowledgements, and role-specific portal experiences backed by source modules.
@@ -10,6 +10,7 @@ Deliver targeted notices, circulars, announcements, acknowledgements, and role-s
 - Tenant users: receive only messages matching role and record scope.
 - Student and Parent/Guardian: view own or explicitly linked academic, attendance, fee, result, notice, and event records.
 - Faculty and HOD: use assignment- or department-scoped teaching workspaces.
+- Class Advisor: view assigned-Section Students, timetable, attendance, and delivered notices.
 - Accountant, Examination Controller, Admission Officer, and Activity Coordinator: use permission-specific operational workspaces.
 
 ## Workflow
@@ -30,17 +31,26 @@ MessageTemplate, Notice, NoticeApprovalEvent, NoticeDelivery, CommunicationDeliv
 ## Current UI Behavior
 `/portal/notices` supports templates, preferences, draft creation, server-resolved audience preview, submission, approval/rejection, scheduling or publication, acknowledgement, delivery-job inspection, attempt history, and retry with retained success/error feedback.
 
-The shared portal shell derives its role label, navigation, dashboard requests, and mutation controls from authenticated role and permission claims. Seeded Student, Parent/Guardian, Faculty, HOD, Accountant, Examination Controller, Admission Officer, and Activity Coordinator identities authenticate through the production API. Student and guardian reads resolve canonical own/linked student IDs; attendance, invoices, published results, and timetable delivery are filtered to those records. Faculty delivery reads and writes are limited to assigned subject offerings, while HOD delivery reads resolve assigned departments.
+Notice and event creation use opaque workspace screens instead of popup dialogs. Across the portal,
+create, edit, detail, and document workflows replace their parent content while active. This is the
+approved interaction model; unique nested URLs are deferred unless deep linking becomes necessary.
+
+The shared portal shell derives its role label, navigation, dashboard requests, and mutation controls from authenticated role, permission, and scope claims. Seeded Student, Parent/Guardian, Faculty, HOD, Class Advisor, Accountant, Examination Controller, Admission Officer, and Activity Coordinator identities authenticate through the production API. Student and guardian reads resolve canonical own/linked student IDs; attendance, invoices, published results, and timetable delivery are filtered to those records. Faculty delivery reads and writes are limited to assigned subject offerings, HOD delivery and academic reads resolve assigned Departments, and Class Advisor records resolve one assigned Section.
+
+Read-only portal users list only notices delivered to their membership. Class Advisor notice
+authoring remains disabled because the current communication audience model does not yet support a
+Section audience; this prevents a scoped role from creating institution-wide notices.
 
 ## Production Completion
 Core communication workflow and role portals are complete locally. External email/SMS provider adapters, production credentials, provider callbacks, and the deferred formal automated suites remain release work. No deployment claim is made.
 
 ## Local Validation
-- Alembic upgraded PostgreSQL through `f0a1b2c3d4e5`; migration drift passed and production OpenAPI generated 174 paths.
+- Communication migrations remain applied and forced-RLS protected; the complete production application now exposes 219 OpenAPI paths.
 - Interactive Playwright completed the administrator draft-to-approval-to-publication workflow and displayed two immutable approval events plus three channel jobs.
-- All eight non-administrator demo identities authenticated and rendered distinct permission-derived navigation.
+- Ten non-administrator demo identities spanning nine role workspaces authenticated and rendered permission-derived navigation.
 - Student attendance and timetable screens returned one own-record source row with no mutation controls; Faculty timetable returned one assigned offering, period, and session with only assigned-delivery actions.
 - The validated portal requests returned no unexpected `401`, `403`, or `404` responses, and desktop plus 390px checks had no horizontal overflow.
+- On 16 September 2026, the Class Advisor journey rendered four scoped dashboard totals, one assigned Student, two class sessions, one attendance row, and read-only delivered notices with no Academics, Fees, attendance-entry, leave-request, correction-request, or notice-create controls. HOD rendered one Department, one Program, three Subjects, one Faculty profile, and scoped delivery controls with no cross-department records or institution-only Faculty creation.
 
 ## Acceptance Criteria
 - Messages reach only intended tenant and audience.

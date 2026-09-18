@@ -20,8 +20,12 @@ from app.domains.examinations.schemas import (
     ExamSeatAllocationSummary,
     ExamSessionCreate,
     ExamSessionSummary,
+    GradeCardDocument,
+    GradeCardIssuanceSummary,
     GradeRuleCreate,
     GradeRuleSummary,
+    HallTicketDocument,
+    HallTicketIssuanceSummary,
     HallTicketSummary,
     InvigilationAssignmentCreate,
     InvigilationAssignmentSummary,
@@ -46,6 +50,8 @@ from app.domains.examinations.schemas import (
     PublishResultsResponse,
     ResultPublicationEventSummary,
     ResultReopenRequest,
+    TranscriptDocument,
+    TranscriptIssuanceSummary,
     TranscriptSummary,
 )
 from app.domains.examinations.service import (
@@ -312,6 +318,49 @@ def get_hall_ticket(
 
     try:
         return HallTicketSummary.model_validate(service.get_hall_ticket(registration_id))
+    except ExaminationsDomainError as error:
+        _raise_domain_error(error)
+
+
+@router.post(
+    "/hall-tickets/{registration_id}/issue",
+    response_model=HallTicketIssuanceSummary,
+    status_code=status.HTTP_201_CREATED,
+)
+def issue_hall_ticket(
+    registration_id: UUID,
+    session: Annotated[Session, Depends(get_runtime_session)],
+    actor: Annotated[ActorContext, Depends(require_permission("examinations.documents.issue"))],
+) -> HallTicketIssuanceSummary:
+    """Issue a Student exam-session hall ticket and return it on replay."""
+
+    service = ExaminationsService(session, actor)
+    try:
+        issuance = service.issue_hall_ticket(registration_id)
+        response = HallTicketIssuanceSummary.model_validate(issuance)
+        session.commit()
+        return response
+    except ExaminationsDomainError as error:
+        _raise_domain_error(error)
+    except IntegrityError as error:
+        _raise_conflict(error)
+
+
+@router.get(
+    "/hall-tickets/{registration_id}/document",
+    response_model=HallTicketDocument,
+)
+def get_hall_ticket_document(
+    registration_id: UUID,
+    service: Annotated[ExaminationsService, Depends(get_examinations_service)],
+) -> HallTicketDocument:
+    """Return a print-ready hall ticket from authorized issued source records."""
+
+    try:
+        document = service.get_hall_ticket_document(registration_id)
+        if document is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hall ticket not found")
+        return document
     except ExaminationsDomainError as error:
         _raise_domain_error(error)
 
@@ -583,6 +632,49 @@ def get_result_detail(
         _raise_domain_error(error)
 
 
+@router.post(
+    "/results/{result_id}/grade-card",
+    response_model=GradeCardIssuanceSummary,
+    status_code=status.HTTP_201_CREATED,
+)
+def issue_grade_card(
+    result_id: UUID,
+    session: Annotated[Session, Depends(get_runtime_session)],
+    actor: Annotated[ActorContext, Depends(require_permission("examinations.documents.issue"))],
+) -> GradeCardIssuanceSummary:
+    """Issue a grade card for the current published result version on replay-safe terms."""
+
+    service = ExaminationsService(session, actor)
+    try:
+        issuance = service.issue_grade_card(result_id)
+        response = GradeCardIssuanceSummary.model_validate(issuance)
+        session.commit()
+        return response
+    except ExaminationsDomainError as error:
+        _raise_domain_error(error)
+    except IntegrityError as error:
+        _raise_conflict(error)
+
+
+@router.get(
+    "/results/{result_id}/grade-card-document",
+    response_model=GradeCardDocument,
+)
+def get_grade_card_document(
+    result_id: UUID,
+    service: Annotated[ExaminationsService, Depends(get_examinations_service)],
+) -> GradeCardDocument:
+    """Return the latest issued grade card for an authorized result."""
+
+    try:
+        document = service.get_grade_card_document(result_id)
+        if document is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Grade card not found")
+        return document
+    except ExaminationsDomainError as error:
+        _raise_domain_error(error)
+
+
 @router.get("/transcripts/{student_id}", response_model=TranscriptSummary)
 def get_transcript(
     student_id: UUID,
@@ -597,5 +689,48 @@ def get_transcript(
             cgpa=cgpa,
             results=[PublishedResultSummary.model_validate(item) for item in results],
         )
+    except ExaminationsDomainError as error:
+        _raise_domain_error(error)
+
+
+@router.post(
+    "/transcripts/{student_id}/issue",
+    response_model=TranscriptIssuanceSummary,
+    status_code=status.HTTP_201_CREATED,
+)
+def issue_transcript(
+    student_id: UUID,
+    session: Annotated[Session, Depends(get_runtime_session)],
+    actor: Annotated[ActorContext, Depends(require_permission("examinations.documents.issue"))],
+) -> TranscriptIssuanceSummary:
+    """Issue a transcript for the current published-result version manifest."""
+
+    service = ExaminationsService(session, actor)
+    try:
+        issuance = service.issue_transcript(student_id)
+        response = TranscriptIssuanceSummary.model_validate(issuance)
+        session.commit()
+        return response
+    except ExaminationsDomainError as error:
+        _raise_domain_error(error)
+    except IntegrityError as error:
+        _raise_conflict(error)
+
+
+@router.get(
+    "/transcripts/{student_id}/document",
+    response_model=TranscriptDocument,
+)
+def get_transcript_document(
+    student_id: UUID,
+    service: Annotated[ExaminationsService, Depends(get_examinations_service)],
+) -> TranscriptDocument:
+    """Return the latest issued transcript for an authorized Student."""
+
+    try:
+        document = service.get_transcript_document(student_id)
+        if document is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transcript not found")
+        return document
     except ExaminationsDomainError as error:
         _raise_domain_error(error)

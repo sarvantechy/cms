@@ -366,6 +366,25 @@ class StudentCertificateRequestSummary(StudentCertificateRequestCreate):
     reviewed_at: datetime | None
 
 
+class StudentCertificateDocument(BaseModel):
+    """Compose one printable requested Student certificate from issued records."""
+
+    request_id: UUID
+    certificate_type: str
+    purpose: str
+    issued_reference: str
+    verification_reference: str
+    issued_at: datetime
+    issued_by_membership_id: UUID | None
+    institution_name: str
+    institution_short_name: str
+    primary_color: str
+    accent_color: str
+    student_id: UUID
+    student_name: str
+    registration_number: str
+
+
 class StudentLifecycleResponse(BaseModel):
     """Return all lifecycle expansion records authorized for one student."""
 

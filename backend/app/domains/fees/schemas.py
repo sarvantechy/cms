@@ -253,6 +253,40 @@ class ReceiptSummary(BaseModel):
     issued_by_membership_id: UUID | None
 
 
+class ReceiptDocumentAllocation(BaseModel):
+    """Present one invoice allocation on a printable receipt."""
+
+    invoice_id: UUID
+    invoice_number: str
+    amount: Decimal
+
+
+class ReceiptDocument(BaseModel):
+    """Compose one printable receipt from immutable financial source records."""
+
+    receipt_id: UUID
+    receipt_number: str
+    verification_reference: str
+    issued_at: datetime
+    issued_by_membership_id: UUID | None
+    institution_name: str
+    institution_short_name: str
+    primary_color: str
+    accent_color: str
+    student_id: UUID
+    student_name: str
+    registration_number: str
+    payment_id: UUID
+    payment_reference: str
+    payment_method: str
+    payment_state: str
+    paid_on: datetime
+    payment_note: str | None
+    currency: str = "INR"
+    total_amount: Decimal
+    allocations: list[ReceiptDocumentAllocation]
+
+
 class FinancialReversalCreate(BaseModel):
     """Payload for reversing one payment."""
 

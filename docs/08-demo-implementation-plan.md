@@ -20,7 +20,7 @@ The implementation will follow the proven structure of the Himalayan Access appl
 - CSS variables and responsive domain-specific styles
 - Playwright for critical browser journeys
 
-The CMS will reuse the interaction language, not copy business-specific components. The application shell will retain grouped role-aware navigation, compact dashboards, operational tables, profile context, responsive behavior, and selectable themes.
+The CMS will reuse the interaction language, not copy business-specific components. The application shell retains grouped role-aware navigation, operational dashboards, tables, profile context, responsive behavior, and selectable themes. Create, edit, detail, and document workflows use opaque in-workspace screens in normal page flow; portal popups, native dialogs, and translucent overlays are not used.
 
 ### Backend
 

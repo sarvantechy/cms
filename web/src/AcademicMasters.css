@@ -78,6 +78,45 @@
   background: var(--portal-paper);
 }
 
+.masters-editor {
+  min-height: 420px;
+  border: 1px solid var(--line);
+  background: var(--portal-paper);
+}
+
+.masters-editor > article {
+  width: min(760px, 100%);
+  background: var(--portal-paper);
+}
+
+.masters-editor > article > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--line);
+}
+
+.masters-editor > article > header p {
+  margin: 0 0 4px;
+  color: var(--tenant-accent);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .12em;
+}
+
+.masters-editor > article > header h2 {
+  margin: 0;
+  font-family: "Newsreader", serif;
+  font-size: 24px;
+}
+
+.masters-editor > article > header h2:focus {
+  outline: 2px solid var(--tenant-accent);
+  outline-offset: 4px;
+}
+
 .masters-panel > header {
   display: flex;
   align-items: center;
@@ -169,7 +208,8 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .masters-panel > header {
+  .masters-panel > header,
+  .masters-editor > article > header {
     align-items: flex-start;
     flex-direction: column;
   }

@@ -36,6 +36,10 @@ logout revokes it. College Access provides invitations, membership lifecycle, ro
 editing, password change, session management, forced logout, and tenant switching. Navigation and
 source requests derive from the authenticated actor's permissions and record scopes.
 
+Invitation, password, role, and role-assignment editors are opaque in-workspace screens. Opening an
+editor replaces the Access overview rather than displaying a popup over membership data. Back or
+Cancel restores the overview without changing authorization behavior.
+
 ## Production Completion
 
 Replace temporary one-time invitation-token display with configured provider delivery and add the

@@ -1,5 +1,9 @@
 # Demo Scope and Experience
 
+> Historical baseline: this document records the originally approved first-demo scope. Current
+> implementation status and later completed slices are tracked in `docs/implementation-status.md`
+> and `docs/10-authoritative-implementation-plan.md`.
+
 ## Purpose of the Demo
 
 The first demo will be a small but real multi-tenant college management web application. It will show how connected college operations work without attempting to build every planned module at once.

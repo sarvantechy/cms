@@ -15,6 +15,7 @@ from app.domains.students.schemas import (
     PersonListResponse,
     PersonSummary,
     StudentCertificateDecision,
+    StudentCertificateDocument,
     StudentCertificateRequestCreate,
     StudentCertificateRequestSummary,
     StudentConversionFromApplication,
@@ -636,6 +637,32 @@ def decide_certificate_request(
         _raise_domain_error(error)
     except IntegrityError as error:
         _raise_conflict(error)
+
+
+@router.get(
+    "/certificate-requests/{request_id}/document",
+    response_model=StudentCertificateDocument,
+)
+def get_certificate_document(
+    request_id: UUID,
+    session: Annotated[Session, Depends(get_runtime_session)],
+    actor: Annotated[ActorContext, Depends(require_actor)],
+) -> StudentCertificateDocument:
+    """Return one issued Student certificate document within actor scope."""
+
+    if not (
+        actor.has_permission("students.records.read")
+        or actor.has_permission("students.own.read")
+        or actor.has_permission("students.linked.read")
+    ):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
+    try:
+        document = StudentsService(session, actor).get_certificate_document(request_id)
+        if document is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Certificate not found")
+        return document
+    except StudentsDomainError as error:
+        _raise_domain_error(error)
 
 
 @router.post(

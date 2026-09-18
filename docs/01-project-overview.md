@@ -1,5 +1,9 @@
 # End-to-End Platform Overview
 
+Portal interaction and dashboard conventions are maintained in
+`docs/11-portal-ui-ux-decisions.md`. Provider, callback, and worker scope is maintained in
+`docs/modules/19-providers-background-jobs.md`.
+
 ## Purpose
 
 The 4by4 College Management System will give a college one reliable place to manage its student and administrative operations. It replaces disconnected spreadsheets, paper registers, and repeated data entry with linked workflows.

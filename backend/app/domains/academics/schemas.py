@@ -92,6 +92,7 @@ class TermCreate(TermBase):
 class TermUpdate(BaseModel):
     """Request payload for updating an existing term."""
 
+    academic_year_id: UUID | None = None
     display_name: str | None = Field(None, min_length=1, max_length=120)
     starts_on: date | None = None
     ends_on: date | None = None
@@ -157,6 +158,7 @@ class ProgramCreate(ProgramBase):
 class ProgramUpdate(BaseModel):
     """Request payload for updating an existing program."""
 
+    department_id: UUID | None = None
     name: str | None = Field(None, min_length=1, max_length=240)
     degree_level: str | None = Field(None, min_length=1, max_length=32)
     duration_years: int | None = Field(None, ge=1, le=10)
@@ -192,6 +194,7 @@ class SubjectCreate(SubjectBase):
 class SubjectUpdate(BaseModel):
     """Request payload for updating an existing subject."""
 
+    department_id: UUID | None = None
     name: str | None = Field(None, min_length=1, max_length=240)
     credits: int | None = Field(None, ge=1, le=20)
     status: str | None = Field(None, pattern=ACTIVE_LIFECYCLE_PATTERN)
@@ -225,6 +228,7 @@ class BatchCreate(BatchBase):
 class BatchUpdate(BaseModel):
     """Request payload for updating an existing batch."""
 
+    program_id: UUID | None = None
     display_name: str | None = Field(None, min_length=1, max_length=120)
     status: str | None = Field(None, pattern="^(active|graduated|archived)$")
 
@@ -258,6 +262,7 @@ class SectionCreate(SectionBase):
 class SectionUpdate(BaseModel):
     """Request payload for updating an existing section."""
 
+    batch_id: UUID | None = None
     display_name: str | None = Field(None, min_length=1, max_length=120)
     max_capacity: int | None = Field(None, ge=1, le=500)
     status: str | None = Field(None, pattern="^(active|merged|archived)$")
@@ -295,6 +300,7 @@ class RoomCreate(RoomBase):
 class RoomUpdate(BaseModel):
     """Request payload for updating an existing room."""
 
+    campus_id: UUID | None = None
     name: str | None = Field(None, min_length=1, max_length=240)
     room_type: str | None = Field(None, pattern="^(classroom|lab|auditorium|seminar|virtual)$")
     capacity: int | None = Field(None, ge=1, le=1000)
@@ -396,6 +402,8 @@ class CurriculumCreate(CurriculumBase):
 class CurriculumUpdate(BaseModel):
     """Request payload for updating an existing curriculum."""
 
+    program_id: UUID | None = None
+    regulation_id: UUID | None = None
     title: str | None = Field(None, min_length=1, max_length=240)
     total_credits: int | None = Field(None, ge=1, le=400)
     status: str | None = Field(None, pattern="^(draft|active|archived)$")
@@ -431,6 +439,8 @@ class CurriculumSubjectCreate(CurriculumSubjectBase):
 class CurriculumSubjectUpdate(BaseModel):
     """Request payload for updating a curriculum-subject mapping."""
 
+    curriculum_id: UUID | None = None
+    subject_id: UUID | None = None
     term_number: int | None = Field(None, ge=1, le=20)
     is_elective: bool | None = None
     credits_override: int | None = Field(None, ge=1, le=20)
@@ -469,6 +479,7 @@ class CalendarEventCreate(CalendarEventBase):
 class CalendarEventUpdate(BaseModel):
     """Request payload for updating an existing calendar event."""
 
+    academic_year_id: UUID | None = None
     name: str | None = Field(None, min_length=1, max_length=240)
     event_type: str | None = Field(None, pattern="^(instructional|exam|holiday|deadline|other)$")
     starts_on: date | None = None

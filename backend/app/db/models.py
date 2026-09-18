@@ -40,6 +40,8 @@ from app.domains.delivery.models import (
     FacultyProfile,
     SubjectOffering,
     TimetablePeriod,
+    TimetablePublication,
+    TimetablePublicationLine,
 )
 from app.domains.examinations.models import (
     AssessmentScheme,
@@ -47,13 +49,16 @@ from app.domains.examinations.models import (
     ExamSchedule,
     ExamSeatAllocation,
     ExamSession,
+    GradeCardIssuance,
     GradeRule,
+    HallTicketIssuance,
     InvigilationAssignment,
     MarkAdjustment,
     MarkEntry,
     PublishedResult,
     PublishedResultLine,
     ResultPublicationEvent,
+    TranscriptIssuance,
 )
 from app.domains.fees.models import (
     CashierSession,
@@ -142,8 +147,10 @@ __all__ = [
     "FeeRefund",
     "FinancialReversal",
     "GatewayReconciliation",
+    "GradeCardIssuance",
     "GradeRule",
     "Guardian",
+    "HallTicketIssuance",
     "InvigilationAssignment",
     "InvoiceLine",
     "LeaveRequest",
@@ -196,4 +203,7 @@ __all__ = [
     "TenantRolePermission",
     "Term",
     "TimetablePeriod",
+    "TimetablePublication",
+    "TimetablePublicationLine",
+    "TranscriptIssuance",
 ]

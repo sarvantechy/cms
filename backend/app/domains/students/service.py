@@ -6,10 +6,17 @@ from datetime import UTC, datetime
 from typing import TypeVar
 from uuid import UUID
 
-from sqlalchemy import func, select, text
+from sqlalchemy import false, func, or_, select, text
 from sqlalchemy.orm import Session
 
-from app.domains.academics.models import AcademicYear, Batch, Program, Section
+from app.domains.academics.models import (
+    AcademicYear,
+    Batch,
+    CollegeSetting,
+    Program,
+    Section,
+    Subject,
+)
 from app.domains.admissions.models import (
     AdmissionCampaign,
     Applicant,
@@ -17,7 +24,7 @@ from app.domains.admissions.models import (
     TenantMediaObject,
 )
 from app.domains.audit.models import AuditEvent
-from app.domains.delivery.models import SubjectOffering
+from app.domains.delivery.models import FacultyAllocation, FacultyProfile, SubjectOffering
 from app.domains.students.models import (
     Guardian,
     Person,
@@ -36,6 +43,7 @@ from app.domains.students.schemas import (
     PersonCreate,
     PersonUpdate,
     StudentCertificateDecision,
+    StudentCertificateDocument,
     StudentCertificateRequestCreate,
     StudentConversionFromApplication,
     StudentCreate,
@@ -52,6 +60,7 @@ from app.domains.students.schemas import (
     StudentSubjectRegistrationDecision,
     StudentUpdate,
 )
+from app.domains.tenancy.models import Tenant
 from app.media_storage import StoredMedia
 from app.security_context import ActorContext, resolve_actor_student_ids
 
@@ -277,12 +286,151 @@ class StudentsService:
         """Return a student only when the actor can read the record under resolved scope."""
 
         student = self._require_entity(Student, student_id, "student_id")
-        if self.actor.has_permission("students.records.read"):
-            return student
-        scoped_ids = resolve_actor_student_ids(self.session, self.actor) or ()
-        if student_id not in scoped_ids:
+        accessible_id = self.session.scalar(
+            self.scoped_student_ids_query().where(Student.id == student_id).limit(1)
+        )
+        if accessible_id is None:
             raise StudentsDomainError("Student not found", 404)
         return student
+
+    def scoped_student_ids_query(self):
+        """Select students visible through institution, academic, or self-service scopes."""
+
+        query = select(Student.id).where(Student.tenant_id == self.actor.tenant_id)
+        if self.actor.scopes_of_type("institution"):
+            return query
+
+        enrollment_conditions = []
+        department_ids = tuple(
+            scope.scope_reference_id
+            for scope in self.actor.scopes_of_type("department")
+            if scope.scope_reference_id is not None
+        )
+        if department_ids:
+            enrollment_conditions.append(
+                StudentEnrollment.program_id.in_(
+                    select(Program.id).where(
+                        Program.tenant_id == self.actor.tenant_id,
+                        Program.department_id.in_(department_ids),
+                    )
+                )
+            )
+        program_ids = tuple(
+            scope.scope_reference_id
+            for scope in self.actor.scopes_of_type("program")
+            if scope.scope_reference_id is not None
+        )
+        if program_ids:
+            enrollment_conditions.append(StudentEnrollment.program_id.in_(program_ids))
+        batch_ids = tuple(
+            scope.scope_reference_id
+            for scope in self.actor.scopes_of_type("batch")
+            if scope.scope_reference_id is not None
+        )
+        if batch_ids:
+            enrollment_conditions.append(StudentEnrollment.batch_id.in_(batch_ids))
+        section_ids = tuple(
+            scope.scope_reference_id
+            for scope in self.actor.scopes_of_type("section")
+            if scope.scope_reference_id is not None
+        )
+        if section_ids:
+            enrollment_conditions.append(StudentEnrollment.section_id.in_(section_ids))
+        offering_ids = tuple(
+            scope.scope_reference_id
+            for scope in self.actor.scopes_of_type("subject_offering")
+            if scope.scope_reference_id is not None
+        )
+        if offering_ids:
+            enrollment_conditions.append(
+                StudentEnrollment.section_id.in_(
+                    select(SubjectOffering.section_id).where(
+                        SubjectOffering.tenant_id == self.actor.tenant_id,
+                        SubjectOffering.id.in_(offering_ids),
+                    )
+                )
+            )
+
+        visibility = []
+        if enrollment_conditions:
+            visibility.append(
+                Student.id.in_(
+                    select(StudentEnrollment.student_id).where(
+                        StudentEnrollment.tenant_id == self.actor.tenant_id,
+                        StudentEnrollment.status == "active",
+                        or_(*enrollment_conditions),
+                    )
+                )
+            )
+        explicit_ids = resolve_actor_student_ids(self.session, self.actor)
+        if explicit_ids:
+            visibility.append(Student.id.in_(explicit_ids))
+        return query.where(or_(*visibility)) if visibility else query.where(false())
+
+    def scoped_person_ids_query(self):
+        """Select Student and Faculty people visible through the actor's scopes."""
+
+        query = select(Person.id).where(Person.tenant_id == self.actor.tenant_id)
+        if self.actor.scopes_of_type("institution"):
+            return query
+
+        visible_person_ids = [
+            Person.id.in_(
+                select(Student.person_id).where(
+                    Student.tenant_id == self.actor.tenant_id,
+                    Student.id.in_(self.scoped_student_ids_query()),
+                )
+            )
+        ]
+        offering_conditions = []
+        offering_ids = tuple(
+            scope.scope_reference_id
+            for scope in self.actor.scopes_of_type("subject_offering")
+            if scope.scope_reference_id is not None
+        )
+        if offering_ids:
+            offering_conditions.append(SubjectOffering.id.in_(offering_ids))
+        department_ids = tuple(
+            scope.scope_reference_id
+            for scope in self.actor.scopes_of_type("department")
+            if scope.scope_reference_id is not None
+        )
+        if department_ids:
+            offering_conditions.append(
+                SubjectOffering.subject_id.in_(
+                    select(Subject.id).where(
+                        Subject.tenant_id == self.actor.tenant_id,
+                        Subject.department_id.in_(department_ids),
+                    )
+                )
+            )
+        section_ids = tuple(
+            scope.scope_reference_id
+            for scope in self.actor.scopes_of_type("section")
+            if scope.scope_reference_id is not None
+        )
+        if section_ids:
+            offering_conditions.append(SubjectOffering.section_id.in_(section_ids))
+        if offering_conditions:
+            visible_person_ids.append(
+                Person.id.in_(
+                    select(FacultyProfile.person_id).where(
+                        FacultyProfile.tenant_id == self.actor.tenant_id,
+                        FacultyProfile.id.in_(
+                            select(FacultyAllocation.faculty_id).where(
+                                FacultyAllocation.tenant_id == self.actor.tenant_id,
+                                FacultyAllocation.offering_id.in_(
+                                    select(SubjectOffering.id).where(
+                                        SubjectOffering.tenant_id == self.actor.tenant_id,
+                                        or_(*offering_conditions),
+                                    )
+                                ),
+                            )
+                        ),
+                    )
+                )
+            )
+        return query.where(or_(*visible_person_ids))
 
     def _validate_academic_target(
         self,
@@ -332,7 +480,10 @@ class StudentsService:
             .join(
                 Person, (Person.tenant_id == Student.tenant_id) & (Person.id == Student.person_id)
             )
-            .where(Student.tenant_id == self.actor.tenant_id)
+            .where(
+                Student.tenant_id == self.actor.tenant_id,
+                Student.id.in_(self.scoped_student_ids_query()),
+            )
         )
         if status is not None:
             query = query.where(Student.status == status)
@@ -378,7 +529,10 @@ class StudentsService:
 
         query = (
             select(Person)
-            .where(Person.tenant_id == self.actor.tenant_id)
+            .where(
+                Person.tenant_id == self.actor.tenant_id,
+                Person.id.in_(self.scoped_person_ids_query()),
+            )
             .order_by(Person.full_name, Person.id)
         )
         total = self.session.scalar(select(func.count()).select_from(query.subquery())) or 0
@@ -389,7 +543,9 @@ class StudentsService:
 
         student = self.session.scalar(
             select(Student).where(
-                Student.id == student_id, Student.tenant_id == self.actor.tenant_id
+                Student.id == student_id,
+                Student.tenant_id == self.actor.tenant_id,
+                Student.id.in_(self.scoped_student_ids_query()),
             )
         )
         if student is None:
@@ -1095,6 +1251,54 @@ class StudentsService:
             {"state": item.state},
         )
         return item
+
+    def get_certificate_document(self, request_id: UUID) -> StudentCertificateDocument | None:
+        """Derive one issued certificate document within authorized Student scope."""
+
+        item = self.session.scalar(
+            select(StudentCertificateRequest).where(
+                StudentCertificateRequest.tenant_id == self.actor.tenant_id,
+                StudentCertificateRequest.id == request_id,
+            )
+        )
+        if item is None:
+            return None
+        self._require_student_access(item.student_id)
+        if item.state != "issued" or not item.issued_reference or not item.reviewed_at:
+            return None
+        student_row = self.session.execute(
+            select(Student, Person)
+            .join(
+                Person,
+                (Person.tenant_id == Student.tenant_id) & (Person.id == Student.person_id),
+            )
+            .where(
+                Student.tenant_id == self.actor.tenant_id,
+                Student.id == item.student_id,
+            )
+        ).one_or_none()
+        tenant = self.session.scalar(select(Tenant).where(Tenant.id == self.actor.tenant_id))
+        setting = self.session.scalar(
+            select(CollegeSetting).where(CollegeSetting.tenant_id == self.actor.tenant_id)
+        )
+        if student_row is None or tenant is None:
+            raise StudentsValidationError("Certificate source records are unavailable")
+        return StudentCertificateDocument(
+            request_id=item.id,
+            certificate_type=item.certificate_type,
+            purpose=item.purpose,
+            issued_reference=item.issued_reference,
+            verification_reference=item.issued_reference,
+            issued_at=item.reviewed_at,
+            issued_by_membership_id=item.reviewed_by_membership_id,
+            institution_name=setting.institution_name if setting else tenant.display_name,
+            institution_short_name=(setting.short_name if setting else None) or tenant.short_name,
+            primary_color=tenant.primary_color,
+            accent_color=tenant.accent_color,
+            student_id=student_row.Student.id,
+            student_name=student_row.Person.full_name,
+            registration_number=student_row.Student.registration_number,
+        )
 
     def convert_application_to_student(
         self,

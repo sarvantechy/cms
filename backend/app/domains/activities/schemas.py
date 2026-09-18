@@ -192,6 +192,27 @@ class ActivityCertificateSummary(BaseModel):
     revoked_at: datetime | None
 
 
+class ActivityCertificateDocument(BaseModel):
+    """Compose one printable participation certificate from authoritative records."""
+
+    certificate_id: UUID
+    serial_number: str
+    verification_reference: str
+    issued_at: datetime
+    institution_name: str
+    institution_short_name: str
+    primary_color: str
+    accent_color: str
+    student_id: UUID
+    student_name: str
+    registration_number: str
+    activity_id: UUID
+    activity_title: str
+    activity_type: str
+    activity_date: date
+    venue: str | None
+
+
 class ActivityPointCreate(BaseModel):
     """Payload for awarding activity points to an attended participant."""
 

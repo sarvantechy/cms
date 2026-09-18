@@ -16,6 +16,7 @@ from app.domains.activities.schemas import (
     ActivityApprovalReview,
     ActivityApprovalSummary,
     ActivityCertificateCreate,
+    ActivityCertificateDocument,
     ActivityCertificateSummary,
     ActivityClubCreate,
     ActivityClubSummary,
@@ -584,6 +585,23 @@ def verify_certificate(
     if item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Certificate not found")
     return ActivityCertificateSummary.model_validate(item)
+
+
+@router.get(
+    "/events/{activity_id}/certificates/{certificate_id}/document",
+    response_model=ActivityCertificateDocument,
+)
+def get_certificate_document(
+    activity_id: UUID,
+    certificate_id: UUID,
+    service: Annotated[ActivitiesService, Depends(get_activities_service)],
+) -> ActivityCertificateDocument:
+    """Return one print-ready participation certificate within actor scope."""
+
+    document = service.get_certificate_document(activity_id, certificate_id)
+    if document is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Certificate not found")
+    return document
 
 
 @router.get("/events/{activity_id}/points", response_model=PaginatedActivityPoints)

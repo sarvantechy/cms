@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import UTC, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from uuid import UUID
 
-from sqlalchemy import func, select, text
+from sqlalchemy import false, func, or_, select, text
 from sqlalchemy.orm import Session
 
-from app.domains.academics.models import Program, Room, Subject, Term
+from app.domains.academics.models import CollegeSetting, Program, Room, Section, Subject, Term
 from app.domains.audit.models import AuditEvent
 from app.domains.delivery.models import FacultyProfile, SubjectOffering
 from app.domains.examinations.models import (
@@ -18,13 +20,16 @@ from app.domains.examinations.models import (
     ExamSchedule,
     ExamSeatAllocation,
     ExamSession,
+    GradeCardIssuance,
     GradeRule,
+    HallTicketIssuance,
     InvigilationAssignment,
     MarkAdjustment,
     MarkEntry,
     PublishedResult,
     PublishedResultLine,
     ResultPublicationEvent,
+    TranscriptIssuance,
 )
 from app.domains.examinations.schemas import (
     AssessmentSchemeCreate,
@@ -32,14 +37,21 @@ from app.domains.examinations.schemas import (
     ExamScheduleCreate,
     ExamSeatAllocationCreate,
     ExamSessionCreate,
+    GradeCardDocument,
+    GradeCardDocumentLine,
     GradeRuleCreate,
+    HallTicketDocument,
+    HallTicketDocumentExam,
     InvigilationAssignmentCreate,
     MarkAdjustmentCreate,
     MarkAdjustmentReview,
     MarkEntryUpsert,
     ResultReopenRequest,
+    TranscriptDocument,
+    TranscriptDocumentResult,
 )
-from app.domains.students.models import Student, StudentEnrollment
+from app.domains.students.models import Person, Student, StudentEnrollment
+from app.domains.tenancy.models import Tenant
 from app.security_context import ActorContext, resolve_actor_student_ids
 
 
@@ -106,12 +118,137 @@ class ExaminationsService:
             )
         )
 
+    def _scoped_registration_ids(self):
+        """Select exam registrations visible through the actor's academic scopes."""
+
+        query = select(ExamRegistration.id).where(
+            ExamRegistration.tenant_id == self.actor.tenant_id
+        )
+        student_ids = resolve_actor_student_ids(self.session, self.actor)
+        if student_ids is not None:
+            return query.where(ExamRegistration.student_id.in_(student_ids))
+        if self.actor.scopes_of_type("institution"):
+            return query
+
+        offering_conditions = []
+        offering_ids = tuple(
+            scope.scope_reference_id
+            for scope in self.actor.scopes_of_type("subject_offering")
+            if scope.scope_reference_id is not None
+        )
+        if offering_ids:
+            offering_conditions.append(SubjectOffering.id.in_(offering_ids))
+        department_ids = tuple(
+            scope.scope_reference_id
+            for scope in self.actor.scopes_of_type("department")
+            if scope.scope_reference_id is not None
+        )
+        if department_ids:
+            offering_conditions.append(
+                SubjectOffering.subject_id.in_(
+                    select(Subject.id).where(
+                        Subject.tenant_id == self.actor.tenant_id,
+                        Subject.department_id.in_(department_ids),
+                    )
+                )
+            )
+        section_ids = tuple(
+            scope.scope_reference_id
+            for scope in self.actor.scopes_of_type("section")
+            if scope.scope_reference_id is not None
+        )
+        if section_ids:
+            offering_conditions.append(SubjectOffering.section_id.in_(section_ids))
+        batch_ids = tuple(
+            scope.scope_reference_id
+            for scope in self.actor.scopes_of_type("batch")
+            if scope.scope_reference_id is not None
+        )
+        if batch_ids:
+            offering_conditions.append(
+                SubjectOffering.section_id.in_(
+                    select(Section.id).where(
+                        Section.tenant_id == self.actor.tenant_id,
+                        Section.batch_id.in_(batch_ids),
+                    )
+                )
+            )
+        if not offering_conditions:
+            return query.where(false())
+        scoped_offering_ids = select(SubjectOffering.id).where(
+            SubjectOffering.tenant_id == self.actor.tenant_id,
+            or_(*offering_conditions),
+        )
+        return query.where(
+            ExamRegistration.schedule_id.in_(
+                select(ExamSchedule.id).where(
+                    ExamSchedule.tenant_id == self.actor.tenant_id,
+                    ExamSchedule.offering_id.in_(scoped_offering_ids),
+                )
+            )
+        )
+
+    def _require_scoped_registration(self, registration_id: UUID) -> ExamRegistration:
+        """Return one registration only when it belongs to the actor's academic scope."""
+
+        registration = self.session.scalar(
+            select(ExamRegistration).where(
+                ExamRegistration.tenant_id == self.actor.tenant_id,
+                ExamRegistration.id == registration_id,
+                ExamRegistration.id.in_(self._scoped_registration_ids()),
+            )
+        )
+        if registration is None:
+            raise ExaminationsValidationError("Invalid registration_id reference")
+        return registration
+
     def _require(self, model, id_: UUID, label: str):
         """Return a tenant-owned row or raise a labeled validation error."""
 
         row = self.session.scalar(select(model).where(model.tenant_id == self.actor.tenant_id, model.id == id_))
         if row is None:
             raise ExaminationsValidationError(f"Invalid {label} reference")
+        return row
+
+    def _document_number(self, prefix: str) -> str:
+        """Generate one collision-resistant tenant document reference."""
+
+        stamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S%f")
+        membership = str(self.actor.membership_id).split("-")[0].upper()
+        return f"{prefix}-{stamp}-{membership}"
+
+    def _document_branding(self) -> tuple[str, str, str, str]:
+        """Return authoritative tenant and college-setting document branding."""
+
+        tenant = self.session.scalar(select(Tenant).where(Tenant.id == self.actor.tenant_id))
+        if tenant is None:
+            raise ExaminationsValidationError("Tenant branding is unavailable")
+        setting = self.session.scalar(
+            select(CollegeSetting).where(CollegeSetting.tenant_id == self.actor.tenant_id)
+        )
+        return (
+            setting.institution_name if setting else tenant.display_name,
+            (setting.short_name if setting else None) or tenant.short_name,
+            tenant.primary_color,
+            tenant.accent_color,
+        )
+
+    def _student_identity(self, student_id: UUID) -> tuple[Student, Person]:
+        """Return one tenant Student and canonical Person identity."""
+
+        row = self.session.execute(
+            select(Student, Person)
+            .join(
+                Person,
+                (Person.tenant_id == Student.tenant_id) & (Person.id == Student.person_id),
+            )
+            .where(
+                Student.tenant_id == self.actor.tenant_id,
+                Student.id == student_id,
+            )
+        ).one_or_none()
+        if row is None:
+            raise ExaminationsValidationError("Invalid student_id reference")
         return row
 
     def list_assessment_schemes(self, skip: int = 0, limit: int = 100):
@@ -205,7 +342,10 @@ class ExaminationsService:
     def list_exam_registrations(self, skip: int = 0, limit: int = 100, schedule_id: UUID | None = None):
         """List exam registrations with an optional schedule filter."""
 
-        query = select(ExamRegistration).where(ExamRegistration.tenant_id == self.actor.tenant_id)
+        query = select(ExamRegistration).where(
+            ExamRegistration.tenant_id == self.actor.tenant_id,
+            ExamRegistration.id.in_(self._scoped_registration_ids()),
+        )
         if schedule_id is not None:
             query = query.where(ExamRegistration.schedule_id == schedule_id)
         return self._paginate(query.order_by(ExamRegistration.created_at.desc()), skip, limit)
@@ -259,7 +399,7 @@ class ExaminationsService:
     def get_hall_ticket(self, registration_id: UUID) -> dict[str, object]:
         """Derive one hall ticket from registration, schedule, and seat sources."""
 
-        registration = self._require(ExamRegistration, registration_id, "registration_id")
+        registration = self._require_scoped_registration(registration_id)
         schedule = self._require(ExamSchedule, registration.schedule_id, "schedule_id")
         seat = self.session.scalar(
             select(ExamSeatAllocation).where(
@@ -276,6 +416,150 @@ class ExaminationsService:
             "seat_number": seat.seat_number if seat else None,
             "eligibility": registration.eligibility,
         }
+
+    def issue_hall_ticket(self, registration_id: UUID) -> HallTicketIssuance:
+        """Issue one hall ticket per Student exam session and return it on replay."""
+
+        registration = self._require_scoped_registration(registration_id)
+        if registration.eligibility != "eligible":
+            raise ExaminationsConflictError("Only eligible registrations can receive hall tickets")
+        schedule = self._require(ExamSchedule, registration.schedule_id, "schedule_id")
+        existing = self.session.scalar(
+            select(HallTicketIssuance).where(
+                HallTicketIssuance.tenant_id == self.actor.tenant_id,
+                HallTicketIssuance.student_id == registration.student_id,
+                HallTicketIssuance.session_id == schedule.session_id,
+            )
+        )
+        if existing is not None:
+            return existing
+        registration_ids = list(
+            self.session.scalars(
+                select(ExamRegistration.id)
+                .join(
+                    ExamSchedule,
+                    (ExamSchedule.tenant_id == ExamRegistration.tenant_id)
+                    & (ExamSchedule.id == ExamRegistration.schedule_id),
+                )
+                .where(
+                    ExamRegistration.tenant_id == self.actor.tenant_id,
+                    ExamRegistration.student_id == registration.student_id,
+                    ExamRegistration.eligibility == "eligible",
+                    ExamSchedule.session_id == schedule.session_id,
+                )
+                .order_by(ExamSchedule.exam_date, ExamRegistration.id)
+            )
+        )
+        issuance = HallTicketIssuance(
+            tenant_id=self.actor.tenant_id,
+            student_id=registration.student_id,
+            session_id=schedule.session_id,
+            ticket_number=self._document_number("HT"),
+            registration_ids=[str(item) for item in registration_ids],
+            issued_at=datetime.now(UTC),
+            issued_by_membership_id=self.actor.membership_id,
+        )
+        self.session.add(issuance)
+        self.session.flush()
+        self._audit(
+            "examinations.hall_ticket.issue",
+            "hall_ticket_issuance",
+            issuance.id,
+            {"ticket_number": issuance.ticket_number, "registrations": len(registration_ids)},
+        )
+        return issuance
+
+    def get_hall_ticket_document(self, registration_id: UUID) -> HallTicketDocument | None:
+        """Derive one printable hall ticket from an authorized issuance manifest."""
+
+        registration = self._require_scoped_registration(registration_id)
+        schedule = self._require(ExamSchedule, registration.schedule_id, "schedule_id")
+        issuance = self.session.scalar(
+            select(HallTicketIssuance).where(
+                HallTicketIssuance.tenant_id == self.actor.tenant_id,
+                HallTicketIssuance.student_id == registration.student_id,
+                HallTicketIssuance.session_id == schedule.session_id,
+            )
+        )
+        if issuance is None:
+            return None
+        registration_ids = [UUID(item) for item in issuance.registration_ids]
+        room_id = func.coalesce(ExamSeatAllocation.room_id, ExamSchedule.room_id)
+        rows = list(
+            self.session.execute(
+                select(
+                    ExamRegistration,
+                    ExamSchedule,
+                    Subject,
+                    ExamSeatAllocation,
+                    Room,
+                )
+                .join(
+                    ExamSchedule,
+                    (ExamSchedule.tenant_id == ExamRegistration.tenant_id)
+                    & (ExamSchedule.id == ExamRegistration.schedule_id),
+                )
+                .join(
+                    SubjectOffering,
+                    (SubjectOffering.tenant_id == ExamSchedule.tenant_id)
+                    & (SubjectOffering.id == ExamSchedule.offering_id),
+                )
+                .join(
+                    Subject,
+                    (Subject.tenant_id == SubjectOffering.tenant_id)
+                    & (Subject.id == SubjectOffering.subject_id),
+                )
+                .outerjoin(
+                    ExamSeatAllocation,
+                    (ExamSeatAllocation.tenant_id == ExamRegistration.tenant_id)
+                    & (ExamSeatAllocation.registration_id == ExamRegistration.id),
+                )
+                .outerjoin(
+                    Room,
+                    (Room.tenant_id == ExamRegistration.tenant_id) & (Room.id == room_id),
+                )
+                .where(
+                    ExamRegistration.tenant_id == self.actor.tenant_id,
+                    ExamRegistration.id.in_(registration_ids),
+                )
+                .order_by(ExamSchedule.exam_date, Subject.code)
+            )
+        )
+        student, person = self._student_identity(issuance.student_id)
+        session = self._require(ExamSession, issuance.session_id, "session_id")
+        term = self._require(Term, session.term_id, "term_id")
+        institution_name, short_name, primary_color, accent_color = self._document_branding()
+        exams = [
+            HallTicketDocumentExam(
+                registration_id=row.ExamRegistration.id,
+                subject_code=row.Subject.code,
+                subject_name=row.Subject.name,
+                exam_date=row.ExamSchedule.exam_date,
+                room_code=row.Room.code if row.Room else None,
+                room_name=row.Room.name if row.Room else None,
+                seat_number=(
+                    row.ExamSeatAllocation.seat_number if row.ExamSeatAllocation else None
+                ),
+            )
+            for row in rows
+        ]
+        return HallTicketDocument(
+            issuance_id=issuance.id,
+            ticket_number=issuance.ticket_number,
+            verification_reference=issuance.ticket_number,
+            issued_at=issuance.issued_at,
+            issued_by_membership_id=issuance.issued_by_membership_id,
+            institution_name=institution_name,
+            institution_short_name=short_name,
+            primary_color=primary_color,
+            accent_color=accent_color,
+            student_id=student.id,
+            student_name=person.full_name,
+            registration_number=student.registration_number,
+            session_id=session.id,
+            term_name=term.display_name,
+            exams=exams,
+        )
 
     def list_invigilation_assignments(self, skip: int = 0, limit: int = 100):
         """List invigilation assignments for the actor's tenant."""
@@ -340,6 +624,7 @@ class ExaminationsService:
         """Approve or reject one requested mark adjustment."""
 
         item = self._require(MarkAdjustment, adjustment_id, "adjustment_id")
+        self._require_scoped_registration(item.registration_id)
         if item.state != "requested":
             raise ExaminationsConflictError("Only requested mark adjustments can be reviewed")
         item.state = payload.state
@@ -356,13 +641,14 @@ class ExaminationsService:
             select(MarkEntry).where(
                 MarkEntry.tenant_id == self.actor.tenant_id,
                 MarkEntry.registration_id == registration_id,
+                MarkEntry.registration_id.in_(self._scoped_registration_ids()),
             )
         )
 
     def enter_marks(self, registration_id: UUID, payload: MarkEntryUpsert) -> MarkEntry:
         """Create or update marks for an eligible unlocked registration."""
 
-        registration = self._require(ExamRegistration, registration_id, "registration_id")
+        registration = self._require_scoped_registration(registration_id)
         if registration.eligibility != "eligible":
             raise ExaminationsConflictError("Marks can be entered only for eligible registrations")
         schedule = self._require(ExamSchedule, registration.schedule_id, "schedule_id")
@@ -831,3 +1117,290 @@ class ExaminationsService:
             rounding=ROUND_HALF_UP,
         )
         return results, cgpa
+
+    def _result_snapshot(
+        self,
+        result_id: UUID,
+        publication_version: int,
+    ) -> tuple[dict[str, object], list[GradeCardDocumentLine]]:
+        """Return one immutable published aggregate and its labeled subject lines."""
+
+        event = self.session.scalar(
+            select(ResultPublicationEvent)
+            .where(
+                ResultPublicationEvent.tenant_id == self.actor.tenant_id,
+                ResultPublicationEvent.result_id == result_id,
+                ResultPublicationEvent.version == publication_version,
+                ResultPublicationEvent.event_type.in_(("published", "republished")),
+            )
+            .order_by(ResultPublicationEvent.created_at.desc())
+        )
+        if event is None:
+            raise ExaminationsValidationError("Published result snapshot is unavailable")
+        raw_lines = event.snapshot.get("lines", [])
+        subject_ids = [UUID(str(line["subject_id"])) for line in raw_lines]
+        subjects = {
+            subject.id: subject
+            for subject in self.session.scalars(
+                select(Subject).where(
+                    Subject.tenant_id == self.actor.tenant_id,
+                    Subject.id.in_(subject_ids),
+                )
+            )
+        }
+        lines = [
+            GradeCardDocumentLine(
+                subject_code=subjects[UUID(str(line["subject_id"]))].code,
+                subject_name=subjects[UUID(str(line["subject_id"]))].name,
+                marks_obtained=Decimal(str(line["marks_obtained"])),
+                max_marks=Decimal(str(line["max_marks"])),
+                credits=int(line["credits"]),
+                grade=str(line["grade"]),
+                grade_point=Decimal(str(line["grade_point"])),
+            )
+            for line in raw_lines
+        ]
+        return event.snapshot, lines
+
+    def _ensure_result_snapshot(self, result: PublishedResult) -> None:
+        """Freeze a baseline event for legacy published results that only have immutable lines."""
+
+        existing = self.session.scalar(
+            select(ResultPublicationEvent.id).where(
+                ResultPublicationEvent.tenant_id == self.actor.tenant_id,
+                ResultPublicationEvent.result_id == result.id,
+                ResultPublicationEvent.version == result.publication_version,
+                ResultPublicationEvent.event_type.in_(("published", "republished")),
+            )
+        )
+        if existing is not None:
+            return
+        lines = list(
+            self.session.scalars(
+                select(PublishedResultLine).where(
+                    PublishedResultLine.tenant_id == self.actor.tenant_id,
+                    PublishedResultLine.result_id == result.id,
+                    PublishedResultLine.publication_version == result.publication_version,
+                )
+            )
+        )
+        self.session.add(
+            ResultPublicationEvent(
+                tenant_id=self.actor.tenant_id,
+                result_id=result.id,
+                version=result.publication_version,
+                event_type="published",
+                reason="Baseline snapshot frozen during document issuance",
+                snapshot={
+                    "total_marks": str(result.total_marks),
+                    "total_max_marks": str(result.total_max_marks),
+                    "percentage": str(result.percentage),
+                    "grade": result.grade,
+                    "gpa": str(result.gpa),
+                    "result": result.result,
+                    "state": result.state,
+                    "lines": [
+                        {
+                            "registration_id": str(line.registration_id),
+                            "subject_id": str(line.subject_id),
+                            "marks_obtained": str(line.marks_obtained),
+                            "max_marks": str(line.max_marks),
+                            "pass_marks": str(line.pass_marks),
+                            "credits": line.credits,
+                            "grade": line.grade,
+                            "grade_point": str(line.grade_point),
+                        }
+                        for line in lines
+                    ],
+                },
+                performed_by_membership_id=self.actor.membership_id,
+            )
+        )
+        self.session.flush()
+
+    def issue_grade_card(self, result_id: UUID) -> GradeCardIssuance:
+        """Issue one grade card for the current published result version on replay-safe terms."""
+
+        result, _, _ = self.get_result_detail(result_id)
+        if result.state != "published":
+            raise ExaminationsConflictError("Only published results can receive grade cards")
+        self._ensure_result_snapshot(result)
+        existing = self.session.scalar(
+            select(GradeCardIssuance).where(
+                GradeCardIssuance.tenant_id == self.actor.tenant_id,
+                GradeCardIssuance.result_id == result.id,
+                GradeCardIssuance.publication_version == result.publication_version,
+            )
+        )
+        if existing is not None:
+            return existing
+        issuance = GradeCardIssuance(
+            tenant_id=self.actor.tenant_id,
+            result_id=result.id,
+            publication_version=result.publication_version,
+            card_number=self._document_number("GC"),
+            issued_at=datetime.now(UTC),
+            issued_by_membership_id=self.actor.membership_id,
+        )
+        self.session.add(issuance)
+        self.session.flush()
+        self._audit(
+            "examinations.grade_card.issue",
+            "grade_card_issuance",
+            issuance.id,
+            {"card_number": issuance.card_number, "version": issuance.publication_version},
+        )
+        return issuance
+
+    def get_grade_card_document(self, result_id: UUID) -> GradeCardDocument | None:
+        """Derive the latest issued grade card from its immutable result snapshot."""
+
+        result, _, _ = self.get_result_detail(result_id)
+        issuance = self.session.scalar(
+            select(GradeCardIssuance)
+            .where(
+                GradeCardIssuance.tenant_id == self.actor.tenant_id,
+                GradeCardIssuance.result_id == result.id,
+            )
+            .order_by(GradeCardIssuance.publication_version.desc())
+        )
+        if issuance is None:
+            return None
+        snapshot, lines = self._result_snapshot(result.id, issuance.publication_version)
+        student, person = self._student_identity(result.student_id)
+        session = self._require(ExamSession, result.session_id, "session_id")
+        term = self._require(Term, session.term_id, "term_id")
+        institution_name, short_name, primary_color, accent_color = self._document_branding()
+        return GradeCardDocument(
+            issuance_id=issuance.id,
+            card_number=issuance.card_number,
+            verification_reference=issuance.card_number,
+            issued_at=issuance.issued_at,
+            issued_by_membership_id=issuance.issued_by_membership_id,
+            institution_name=institution_name,
+            institution_short_name=short_name,
+            primary_color=primary_color,
+            accent_color=accent_color,
+            student_id=student.id,
+            student_name=person.full_name,
+            registration_number=student.registration_number,
+            result_id=result.id,
+            session_id=session.id,
+            term_name=term.display_name,
+            publication_version=issuance.publication_version,
+            total_marks=Decimal(str(snapshot["total_marks"])),
+            total_max_marks=Decimal(str(snapshot["total_max_marks"])),
+            percentage=Decimal(str(snapshot["percentage"])),
+            grade=str(snapshot["grade"]),
+            gpa=Decimal(str(snapshot["gpa"])),
+            result=str(snapshot["result"]),
+            lines=lines,
+        )
+
+    def issue_transcript(self, student_id: UUID) -> TranscriptIssuance:
+        """Issue one transcript for the current published-result version manifest."""
+
+        results, _ = self.build_transcript(student_id)
+        if not results:
+            raise ExaminationsConflictError("At least one published result is required")
+        for result in results:
+            self._ensure_result_snapshot(result)
+        manifest = [
+            {"result_id": str(result.id), "publication_version": result.publication_version}
+            for result in results
+        ]
+        version_hash = hashlib.sha256(
+            json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        existing = self.session.scalar(
+            select(TranscriptIssuance).where(
+                TranscriptIssuance.tenant_id == self.actor.tenant_id,
+                TranscriptIssuance.student_id == student_id,
+                TranscriptIssuance.version_hash == version_hash,
+            )
+        )
+        if existing is not None:
+            return existing
+        issuance = TranscriptIssuance(
+            tenant_id=self.actor.tenant_id,
+            student_id=student_id,
+            transcript_number=self._document_number("TR"),
+            version_hash=version_hash,
+            result_versions=manifest,
+            issued_at=datetime.now(UTC),
+            issued_by_membership_id=self.actor.membership_id,
+        )
+        self.session.add(issuance)
+        self.session.flush()
+        self._audit(
+            "examinations.transcript.issue",
+            "transcript_issuance",
+            issuance.id,
+            {"transcript_number": issuance.transcript_number, "results": len(manifest)},
+        )
+        return issuance
+
+    def get_transcript_document(self, student_id: UUID) -> TranscriptDocument | None:
+        """Derive the latest issued transcript from its immutable version manifest."""
+
+        self.build_transcript(student_id)
+        issuance = self.session.scalar(
+            select(TranscriptIssuance)
+            .where(
+                TranscriptIssuance.tenant_id == self.actor.tenant_id,
+                TranscriptIssuance.student_id == student_id,
+            )
+            .order_by(TranscriptIssuance.issued_at.desc())
+        )
+        if issuance is None:
+            return None
+        document_results = []
+        gpa_total = Decimal("0.00")
+        for manifest_item in issuance.result_versions:
+            result_id = UUID(str(manifest_item["result_id"]))
+            version = int(manifest_item["publication_version"])
+            result = self._require(PublishedResult, result_id, "result_id")
+            if result.student_id != student_id:
+                raise ExaminationsValidationError("Transcript result manifest is invalid")
+            snapshot, lines = self._result_snapshot(result.id, version)
+            session = self._require(ExamSession, result.session_id, "session_id")
+            term = self._require(Term, session.term_id, "term_id")
+            gpa = Decimal(str(snapshot["gpa"]))
+            gpa_total += gpa
+            document_results.append(
+                TranscriptDocumentResult(
+                    result_id=result.id,
+                    session_id=session.id,
+                    term_name=term.display_name,
+                    publication_version=version,
+                    total_marks=Decimal(str(snapshot["total_marks"])),
+                    total_max_marks=Decimal(str(snapshot["total_max_marks"])),
+                    percentage=Decimal(str(snapshot["percentage"])),
+                    grade=str(snapshot["grade"]),
+                    gpa=gpa,
+                    result=str(snapshot["result"]),
+                    lines=lines,
+                )
+            )
+        student, person = self._student_identity(student_id)
+        institution_name, short_name, primary_color, accent_color = self._document_branding()
+        cgpa = (gpa_total / len(document_results)).quantize(
+            Decimal("0.01"),
+            rounding=ROUND_HALF_UP,
+        )
+        return TranscriptDocument(
+            issuance_id=issuance.id,
+            transcript_number=issuance.transcript_number,
+            verification_reference=issuance.transcript_number,
+            issued_at=issuance.issued_at,
+            issued_by_membership_id=issuance.issued_by_membership_id,
+            institution_name=institution_name,
+            institution_short_name=short_name,
+            primary_color=primary_color,
+            accent_color=accent_color,
+            student_id=student.id,
+            student_name=person.full_name,
+            registration_number=student.registration_number,
+            cgpa=cgpa,
+            results=document_results,
+        )

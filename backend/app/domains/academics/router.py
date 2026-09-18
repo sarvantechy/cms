@@ -286,14 +286,20 @@ def update_term(
     session: Annotated[Session, Depends(get_runtime_session)],
     actor: Annotated[ActorContext, Depends(require_permission("academics.settings.manage"))],
 ) -> TermSummary:
-    """Update an existing term."""
+    """Update a term while protecting in-use structural dependencies."""
 
-    service = AcademicsService(session, actor)
-    term = service.update_term(term_id, payload)
-    if term is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Term not found")
-    session.commit()
-    return TermSummary.model_validate(term)
+    try:
+        service = AcademicsService(session, actor)
+        term = service.update_term(term_id, payload)
+        if term is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Term not found")
+        response = TermSummary.model_validate(term)
+        session.commit()
+        return response
+    except AcademicsDomainError as error:
+        _raise_domain_error(error)
+    except IntegrityError as error:
+        _raise_conflict(error)
 
 
 # Department endpoints
@@ -400,14 +406,20 @@ def update_program(
     session: Annotated[Session, Depends(get_runtime_session)],
     actor: Annotated[ActorContext, Depends(require_permission("academics.settings.manage"))],
 ) -> ProgramSummary:
-    """Update an existing program."""
+    """Update a program while protecting in-use structural dependencies."""
 
-    service = AcademicsService(session, actor)
-    program = service.update_program(program_id, payload)
-    if program is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Program not found")
-    session.commit()
-    return ProgramSummary.model_validate(program)
+    try:
+        service = AcademicsService(session, actor)
+        program = service.update_program(program_id, payload)
+        if program is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Program not found")
+        response = ProgramSummary.model_validate(program)
+        session.commit()
+        return response
+    except AcademicsDomainError as error:
+        _raise_domain_error(error)
+    except IntegrityError as error:
+        _raise_conflict(error)
 
 
 # Subject endpoints
@@ -457,14 +469,20 @@ def update_subject(
     session: Annotated[Session, Depends(get_runtime_session)],
     actor: Annotated[ActorContext, Depends(require_permission("academics.settings.manage"))],
 ) -> SubjectSummary:
-    """Update an existing subject."""
+    """Update a subject while protecting in-use structural dependencies."""
 
-    service = AcademicsService(session, actor)
-    subject = service.update_subject(subject_id, payload)
-    if subject is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subject not found")
-    session.commit()
-    return SubjectSummary.model_validate(subject)
+    try:
+        service = AcademicsService(session, actor)
+        subject = service.update_subject(subject_id, payload)
+        if subject is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subject not found")
+        response = SubjectSummary.model_validate(subject)
+        session.commit()
+        return response
+    except AcademicsDomainError as error:
+        _raise_domain_error(error)
+    except IntegrityError as error:
+        _raise_conflict(error)
 
 
 # Batch endpoints
@@ -514,14 +532,20 @@ def update_batch(
     session: Annotated[Session, Depends(get_runtime_session)],
     actor: Annotated[ActorContext, Depends(require_permission("academics.settings.manage"))],
 ) -> BatchSummary:
-    """Update an existing batch."""
+    """Update a batch while protecting in-use structural dependencies."""
 
-    service = AcademicsService(session, actor)
-    batch = service.update_batch(batch_id, payload)
-    if batch is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")
-    session.commit()
-    return BatchSummary.model_validate(batch)
+    try:
+        service = AcademicsService(session, actor)
+        batch = service.update_batch(batch_id, payload)
+        if batch is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")
+        response = BatchSummary.model_validate(batch)
+        session.commit()
+        return response
+    except AcademicsDomainError as error:
+        _raise_domain_error(error)
+    except IntegrityError as error:
+        _raise_conflict(error)
 
 
 # Section endpoints
@@ -571,14 +595,20 @@ def update_section(
     session: Annotated[Session, Depends(get_runtime_session)],
     actor: Annotated[ActorContext, Depends(require_permission("academics.settings.manage"))],
 ) -> SectionSummary:
-    """Update an existing section."""
+    """Update a section while protecting in-use structural dependencies."""
 
-    service = AcademicsService(session, actor)
-    section = service.update_section(section_id, payload)
-    if section is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
-    session.commit()
-    return SectionSummary.model_validate(section)
+    try:
+        service = AcademicsService(session, actor)
+        section = service.update_section(section_id, payload)
+        if section is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
+        response = SectionSummary.model_validate(section)
+        session.commit()
+        return response
+    except AcademicsDomainError as error:
+        _raise_domain_error(error)
+    except IntegrityError as error:
+        _raise_conflict(error)
 
 
 # Room endpoints
@@ -628,14 +658,20 @@ def update_room(
     session: Annotated[Session, Depends(get_runtime_session)],
     actor: Annotated[ActorContext, Depends(require_permission("academics.settings.manage"))],
 ) -> RoomSummary:
-    """Update an existing room."""
+    """Update a room while protecting in-use structural dependencies."""
 
-    service = AcademicsService(session, actor)
-    room = service.update_room(room_id, payload)
-    if room is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
-    session.commit()
-    return RoomSummary.model_validate(room)
+    try:
+        service = AcademicsService(session, actor)
+        room = service.update_room(room_id, payload)
+        if room is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
+        response = RoomSummary.model_validate(room)
+        session.commit()
+        return response
+    except AcademicsDomainError as error:
+        _raise_domain_error(error)
+    except IntegrityError as error:
+        _raise_conflict(error)
 
 
 # College Setting endpoints
@@ -824,15 +860,16 @@ def update_curriculum(
     session: Annotated[Session, Depends(get_runtime_session)],
     actor: Annotated[ActorContext, Depends(require_permission("academics.settings.manage"))],
 ) -> CurriculumSummary:
-    """Update one curriculum for the authenticated tenant."""
+    """Update a curriculum while protecting subject-mapping dependencies."""
 
     service = AcademicsService(session, actor)
     try:
         curriculum = service.update_curriculum(curriculum_id, payload)
         if curriculum is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Curriculum not found")
+        response = CurriculumSummary.model_validate(curriculum)
         session.commit()
-        return CurriculumSummary.model_validate(curriculum)
+        return response
     except AcademicsDomainError as error:
         _raise_domain_error(error)
     except IntegrityError as error:

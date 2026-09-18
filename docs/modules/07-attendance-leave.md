@@ -1,6 +1,6 @@
 # Attendance and Leave
 
-**Status:** Implemented locally for College Administrator student-attendance and person-leave operations with PostgreSQL persistence, forced RLS, protected APIs, and source-backed UI controls.
+**Status:** Implemented locally for College Administrator, scoped HOD, Class Advisor, Faculty, Student, and Guardian workflows with PostgreSQL persistence, forced RLS, protected APIs, and source-backed UI controls.
 
 ## Purpose
 Generate class sessions from timetables, capture period attendance, lock registers, control corrections, review leave, and derive traceable attendance and examination-eligibility inputs.
@@ -32,6 +32,16 @@ The implemented data includes `ClassSession`, `AttendanceRecord`, `AttendanceCor
 
 ## Current UI Behavior
 The Attendance workspace provides source-backed attendance entry, register locking, correction requests and review, leave requests and review, session and record lists, and a student selector with percentage, threshold, shortage, outcomes, and eligibility presentation.
+
+Attendance entry, correction, and leave forms use dedicated in-workspace screens with explicit
+Cancel or Back actions. They no longer use native dialogs or overlay the attendance register.
+
+Exact permissions control each action: attendance entry, correction request, leave request,
+register locking, and correction/leave review are not collapsed into one generic manage state. HOD
+and Class Advisor reads require both an in-scope class session and an in-scope Student. Direct
+Student, attendance-record, correction, leave, session, and summary IDs outside scope are rejected.
+The Advisor workspace exposes assigned-class summaries and review outcomes without entry, request,
+or leave controls.
 
 ## Remaining Adjacent Scope
 - Faculty/staff clock or daily attendance is a separate HR attendance domain and remains in Increment 15.

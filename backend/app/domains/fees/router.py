@@ -40,6 +40,7 @@ from app.domains.fees.schemas import (
     PaymentCreate,
     PaymentPostResponse,
     PaymentSummary,
+    ReceiptDocument,
     ReceiptSummary,
     StudentInvoiceCreate,
     StudentInvoiceSummary,
@@ -373,6 +374,19 @@ def issue_receipt(
         _raise_domain_error(error)
     except IntegrityError as error:
         _raise_conflict(error)
+
+
+@router.get("/payments/{payment_id}/receipt-document", response_model=ReceiptDocument)
+def get_receipt_document(
+    payment_id: UUID,
+    service: Annotated[FeesService, Depends(get_fees_service)],
+) -> ReceiptDocument:
+    """Return a print-ready receipt derived from authorized financial source records."""
+
+    document = service.get_receipt_document(payment_id)
+    if document is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Receipt not found")
+    return document
 
 
 @router.post("/payments/{payment_id}/reverse", response_model=FinancialReversalSummary)

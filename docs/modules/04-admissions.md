@@ -31,7 +31,12 @@ Enquiry, IntakeCampaign, Application, ApplicationDocument, Verification, SeatRul
 applications, document metadata, category seat pools, and offers. Staff can manage enquiry,
 application, document-verification, and offer lifecycles through only the transitions allowed by
 the backend. The workspace also presents remaining seat capacity, application details, append-only
-history, validation failures, and idempotent accepted-application conversion results.
+history, validation failures, authenticated private-document downloads, and idempotent
+accepted-application conversion results.
+
+Staff creation forms and application detail are full-width in-workspace screens. Opening a form or
+record hides the admissions list until Cancel, Close, or Back is selected; no application popup or
+transparent overlay is used.
 
 `/portal/my-application` binds an authenticated Applicant membership to exactly one tenant-owned
 Applicant record. The Applicant can edit profile and statement data while the application is a
@@ -49,7 +54,7 @@ document URLs remain supported for existing metadata records.
 ## Local Validation
 - Alembic upgraded to `f8cd51ae2d03`; migration drift is clean and Applicant-access, media, and
 	application-document RLS is forced.
-- The production FastAPI application exposes 207 OpenAPI paths, including five Applicant
+- The production FastAPI application exposes 219 OpenAPI paths, including five Applicant
 	self-service routes and authenticated Applicant/staff media downloads.
 - Frontend TypeScript production build and focused backend Ruff pass.
 - Interactive Playwright created a PostgreSQL enquiry, reloaded it, transitioned it from `new` to
@@ -62,6 +67,9 @@ document URLs remain supported for existing metadata records.
 	cache reuse; Arts now receives 200 and Law receives 404.
 - Repeated two-tenant `--seed-demo` onboarding preserved the submitted application and uploaded
 	media instead of resetting user-modified workflow state.
+- On 16 September 2026, interactive Playwright opened the submitted portal application through the
+	College Administrator workspace, rendered its media-backed Download action, and received the
+	authorized PDF with `private, no-store` cache control.
 
 ## Acceptance Criteria
 - One application reaches accepted offer through explicit transitions.

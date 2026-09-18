@@ -98,11 +98,22 @@ class CommunicationsService:
         )
 
     def _get_notice(self, notice_id: UUID) -> Notice | None:
-        """Return a notice when it belongs to the actor's tenant."""
+        """Return a notice when the actor manages it or has a delivery."""
 
-        return self.session.scalar(
-            select(Notice).where(Notice.tenant_id == self.actor.tenant_id, Notice.id == notice_id)
+        query = select(Notice).where(
+            Notice.tenant_id == self.actor.tenant_id,
+            Notice.id == notice_id,
         )
+        if not self.actor.has_permission("communications.notices.manage"):
+            query = query.where(
+                Notice.id.in_(
+                    select(NoticeDelivery.notice_id).where(
+                        NoticeDelivery.tenant_id == self.actor.tenant_id,
+                        NoticeDelivery.membership_id == self.actor.membership_id,
+                    )
+                )
+            )
+        return self.session.scalar(query)
 
     def _validate_audience(self, audience_type: str, audience_ref: UUID | None) -> None:
         """Validate a notice audience and its optional tenant reference."""
@@ -257,9 +268,18 @@ class CommunicationsService:
         return count
 
     def list_notices(self, skip: int = 0, limit: int = 100, state: str | None = None):
-        """List tenant notices with an optional lifecycle-state filter."""
+        """List managed notices or notices delivered to the actor membership."""
 
         query = select(Notice).where(Notice.tenant_id == self.actor.tenant_id)
+        if not self.actor.has_permission("communications.notices.manage"):
+            query = query.where(
+                Notice.id.in_(
+                    select(NoticeDelivery.notice_id).where(
+                        NoticeDelivery.tenant_id == self.actor.tenant_id,
+                        NoticeDelivery.membership_id == self.actor.membership_id,
+                    )
+                )
+            )
         if state is not None:
             query = query.where(Notice.state == state)
         query = query.order_by(Notice.created_at.desc())

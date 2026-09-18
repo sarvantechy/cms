@@ -37,6 +37,16 @@ class ActorContext:
     def student_scope_ids(self) -> tuple[UUID, ...] | None:
         """Return explicit linked-student IDs or None for non-self-service actors."""
 
+        organizational_scope_types = {
+            "institution",
+            "department",
+            "program",
+            "batch",
+            "section",
+            "subject_offering",
+        }
+        if any(scope.scope_type in organizational_scope_types for scope in self.scopes):
+            return None
         if not ({"students.own.read", "students.linked.read"} & self.permissions):
             return None
         scope_types = {"own_record", "linked_student"}

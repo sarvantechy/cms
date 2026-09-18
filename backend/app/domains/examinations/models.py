@@ -10,6 +10,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKeyConstraint,
+    Index,
     Integer,
     Numeric,
     String,
@@ -392,3 +393,106 @@ class ResultPublicationEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     reason: Mapped[str | None] = mapped_column(Text)
     snapshot: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
     performed_by_membership_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+
+
+class HallTicketIssuance(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Record one immutable hall-ticket issuance for a Student exam session."""
+
+    __tablename__ = "hall_ticket_issuances"
+    __table_args__ = (
+        Index("ix_hall_ticket_issuances_student", "tenant_id", "student_id", "issued_at"),
+        UniqueConstraint("tenant_id", "id"),
+        UniqueConstraint("tenant_id", "ticket_number"),
+        UniqueConstraint("tenant_id", "student_id", "session_id"),
+        ForeignKeyConstraint(["tenant_id"], [TENANT_ID_REFERENCE], ondelete="RESTRICT"),
+        ForeignKeyConstraint(
+            ["tenant_id", "student_id"],
+            ["students.tenant_id", "students.id"],
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "session_id"],
+            ["exam_sessions.tenant_id", "exam_sessions.id"],
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "issued_by_membership_id"],
+            ["tenant_memberships.tenant_id", "tenant_memberships.id"],
+            ondelete="RESTRICT",
+        ),
+    )
+
+    tenant_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    student_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    session_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    ticket_number: Mapped[str] = mapped_column(String(64), nullable=False)
+    registration_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    issued_by_membership_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+
+
+class GradeCardIssuance(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Record one immutable grade-card issuance for a published result version."""
+
+    __tablename__ = "grade_card_issuances"
+    __table_args__ = (
+        CheckConstraint("publication_version > 0", name="ck_grade_card_issuances_version"),
+        Index(
+            "ix_grade_card_issuances_result",
+            "tenant_id",
+            "result_id",
+            "publication_version",
+        ),
+        UniqueConstraint("tenant_id", "id"),
+        UniqueConstraint("tenant_id", "card_number"),
+        UniqueConstraint("tenant_id", "result_id", "publication_version"),
+        ForeignKeyConstraint(["tenant_id"], [TENANT_ID_REFERENCE], ondelete="RESTRICT"),
+        ForeignKeyConstraint(
+            ["tenant_id", "result_id"],
+            ["published_results.tenant_id", "published_results.id"],
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "issued_by_membership_id"],
+            ["tenant_memberships.tenant_id", "tenant_memberships.id"],
+            ondelete="RESTRICT",
+        ),
+    )
+
+    tenant_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    result_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    publication_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    card_number: Mapped[str] = mapped_column(String(64), nullable=False)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    issued_by_membership_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+
+
+class TranscriptIssuance(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Record one immutable transcript issuance against a result-version manifest."""
+
+    __tablename__ = "transcript_issuances"
+    __table_args__ = (
+        Index("ix_transcript_issuances_student", "tenant_id", "student_id", "issued_at"),
+        UniqueConstraint("tenant_id", "id"),
+        UniqueConstraint("tenant_id", "transcript_number"),
+        UniqueConstraint("tenant_id", "student_id", "version_hash"),
+        ForeignKeyConstraint(["tenant_id"], [TENANT_ID_REFERENCE], ondelete="RESTRICT"),
+        ForeignKeyConstraint(
+            ["tenant_id", "student_id"],
+            ["students.tenant_id", "students.id"],
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "issued_by_membership_id"],
+            ["tenant_memberships.tenant_id", "tenant_memberships.id"],
+            ondelete="RESTRICT",
+        ),
+    )
+
+    tenant_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    student_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    transcript_number: Mapped[str] = mapped_column(String(64), nullable=False)
+    version_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    result_versions: Mapped[list[dict[str, object]]] = mapped_column(JSON, nullable=False)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    issued_by_membership_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)

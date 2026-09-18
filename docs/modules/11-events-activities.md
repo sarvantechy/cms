@@ -34,6 +34,9 @@ certificates, points, and achievements. The Student workspace lists published ev
 permits registration through the authenticated student's own record. Selecting an event reloads
 its participant and operational records rather than reusing another event's state.
 
+Event creation and printable participation certificates use full-width workspace screens rather
+than overlays. Student and Coordinator source lists are hidden while a certificate is active.
+
 ## Implemented Behavior
 - Every tenant-owned activity table uses forced PostgreSQL RLS, runtime-role grants, and
 	tenant-safe references.
@@ -46,6 +49,9 @@ its participant and operational records rather than reusing another event's stat
 - Certificates require attended participation, have unique verification serials, and resolve
 	through the protected verification endpoint.
 - Certificate issuance, points, and achievements remain visible as persisted participant outcomes.
+- Active participation certificates have a source-derived printable document containing tenant
+	branding, Student identity, activity facts, and the existing serial verification reference.
+	Coordinators can print from Outcomes, while Students see only their own active certificate in Events.
 
 ## Local Validation
 On 29 August 2026, the browser journey created and published `Leadership Summit 2026`, approved its
@@ -53,7 +59,8 @@ venue and INR 5,000 budget, registered a Student through self-service, approved 
 recorded attendance, created a team, approved an INR 1,200 expense, issued and verified a
 certificate, awarded 25 points, and recorded an achievement. Mutation responses were `200` or
 `201`; reloads preserved every outcome. The Activity Coordinator page had no horizontal overflow
-at a 390 px viewport.
+at a 390 px viewport. On 17 September 2026, the active certificate document returned `200` for its
+Student, `404` for an unrelated Student and another tenant, and passed 390 px and print-media browser checks.
 
 ## Remaining Release Work
 Formal unit, API, permission, RLS, migration, concurrency, and persisted browser suites remain

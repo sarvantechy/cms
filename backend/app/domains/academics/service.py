@@ -3,7 +3,7 @@
 from typing import Any, TypeVar
 from uuid import UUID
 
-from sqlalchemy import func, select, text
+from sqlalchemy import false, func, select, text
 from sqlalchemy.orm import Session
 
 from app.domains.academics.models import (
@@ -55,7 +55,25 @@ from app.domains.academics.schemas import (
     TermCreate,
     TermUpdate,
 )
+from app.domains.admissions.models import AdmissionCampaign, Application
 from app.domains.audit.models import AuditEvent
+from app.domains.delivery.models import SubjectOffering, TimetablePeriod
+from app.domains.examinations.models import (
+    AssessmentScheme,
+    ExamSchedule,
+    ExamSeatAllocation,
+    ExamSession,
+    GradeRule,
+    InvigilationAssignment,
+    PublishedResultLine,
+)
+from app.domains.fees.models import FeePlan
+from app.domains.identity.models import MembershipRoleScope
+from app.domains.students.models import (
+    StudentEnrollment,
+    StudentLifecycleRequest,
+    StudentProgression,
+)
 from app.security_context import ActorContext
 
 ModelType = TypeVar("ModelType")
@@ -79,6 +97,15 @@ class AcademicsValidationError(AcademicsDomainError):
         """Create a validation error with a stable 422 response status."""
 
         super().__init__(detail=detail, status_code=422)
+
+
+class AcademicsConflictError(AcademicsDomainError):
+    """Represent an in-use academic structure conflict mapped to HTTP 409."""
+
+    def __init__(self, detail: str) -> None:
+        """Create a conflict error with a stable 409 response status."""
+
+        super().__init__(detail=detail, status_code=409)
 
 
 class AcademicsService:
@@ -130,6 +157,238 @@ class AcademicsService:
         if entity is None:
             raise AcademicsValidationError(f"Invalid {entity_label} reference")
         return entity
+
+    def _scoped_department_ids(self):
+        """Select departments visible through institution or department scopes."""
+
+        query = select(Department.id).where(Department.tenant_id == self.actor.tenant_id)
+        if self.actor.scopes_of_type("institution"):
+            return query
+        department_ids = tuple(
+            scope.scope_reference_id
+            for scope in self.actor.scopes_of_type("department")
+            if scope.scope_reference_id is not None
+        )
+        return query.where(Department.id.in_(department_ids)) if department_ids else query.where(false())
+
+    def _scoped_program_ids(self):
+        """Select programs owned by departments visible to the actor."""
+
+        return select(Program.id).where(
+            Program.tenant_id == self.actor.tenant_id,
+            Program.department_id.in_(self._scoped_department_ids()),
+        )
+
+    def _scoped_batch_ids(self):
+        """Select batches owned by programs visible to the actor."""
+
+        return select(Batch.id).where(
+            Batch.tenant_id == self.actor.tenant_id,
+            Batch.program_id.in_(self._scoped_program_ids()),
+        )
+
+    def _scoped_curriculum_ids(self):
+        """Select curricula owned by programs visible to the actor."""
+
+        return select(Curriculum.id).where(
+            Curriculum.tenant_id == self.actor.tenant_id,
+            Curriculum.program_id.in_(self._scoped_program_ids()),
+        )
+
+    def _program_has_dependents(self, program_id: UUID) -> bool:
+        """Return whether any tenant-owned structure or workflow references a program."""
+
+        tenant_id = self.actor.tenant_id
+        queries = (
+            select(Batch.id).where(Batch.tenant_id == tenant_id, Batch.program_id == program_id),
+            select(Curriculum.id).where(
+                Curriculum.tenant_id == tenant_id,
+                Curriculum.program_id == program_id,
+            ),
+            select(AdmissionCampaign.id).where(
+                AdmissionCampaign.tenant_id == tenant_id,
+                AdmissionCampaign.program_id == program_id,
+            ),
+            select(Application.id).where(
+                Application.tenant_id == tenant_id,
+                Application.program_id == program_id,
+            ),
+            select(StudentEnrollment.id).where(
+                StudentEnrollment.tenant_id == tenant_id,
+                StudentEnrollment.program_id == program_id,
+            ),
+            select(StudentProgression.id).where(
+                StudentProgression.tenant_id == tenant_id,
+                StudentProgression.target_program_id == program_id,
+            ),
+            select(StudentLifecycleRequest.id).where(
+                StudentLifecycleRequest.tenant_id == tenant_id,
+                StudentLifecycleRequest.target_program_id == program_id,
+            ),
+            select(FeePlan.id).where(
+                FeePlan.tenant_id == tenant_id,
+                FeePlan.program_id == program_id,
+            ),
+            select(AssessmentScheme.id).where(
+                AssessmentScheme.tenant_id == tenant_id,
+                AssessmentScheme.program_id == program_id,
+            ),
+            select(MembershipRoleScope.id).where(
+                MembershipRoleScope.tenant_id == tenant_id,
+                MembershipRoleScope.scope_type == "program",
+                MembershipRoleScope.scope_reference_id == program_id,
+            ),
+        )
+        return any(self.session.scalar(query.limit(1)) is not None for query in queries)
+
+    def _subject_has_dependents(self, subject_id: UUID) -> bool:
+        """Return whether any tenant-owned structure or workflow references a subject."""
+
+        tenant_id = self.actor.tenant_id
+        queries = (
+            select(CurriculumSubject.id).where(
+                CurriculumSubject.tenant_id == tenant_id,
+                CurriculumSubject.subject_id == subject_id,
+            ),
+            select(SubjectOffering.id).where(
+                SubjectOffering.tenant_id == tenant_id,
+                SubjectOffering.subject_id == subject_id,
+            ),
+            select(AssessmentScheme.id).where(
+                AssessmentScheme.tenant_id == tenant_id,
+                AssessmentScheme.subject_id == subject_id,
+            ),
+            select(PublishedResultLine.id).where(
+                PublishedResultLine.tenant_id == tenant_id,
+                PublishedResultLine.subject_id == subject_id,
+            ),
+        )
+        return any(self.session.scalar(query.limit(1)) is not None for query in queries)
+
+    def _batch_has_dependents(self, batch_id: UUID) -> bool:
+        """Return whether any tenant-owned structure or workflow references a batch."""
+
+        tenant_id = self.actor.tenant_id
+        queries = (
+            select(Section.id).where(
+                Section.tenant_id == tenant_id,
+                Section.batch_id == batch_id,
+            ),
+            select(StudentEnrollment.id).where(
+                StudentEnrollment.tenant_id == tenant_id,
+                StudentEnrollment.batch_id == batch_id,
+            ),
+            select(StudentProgression.id).where(
+                StudentProgression.tenant_id == tenant_id,
+                StudentProgression.target_batch_id == batch_id,
+            ),
+            select(StudentLifecycleRequest.id).where(
+                StudentLifecycleRequest.tenant_id == tenant_id,
+                StudentLifecycleRequest.target_batch_id == batch_id,
+            ),
+            select(MembershipRoleScope.id).where(
+                MembershipRoleScope.tenant_id == tenant_id,
+                MembershipRoleScope.scope_type == "batch",
+                MembershipRoleScope.scope_reference_id == batch_id,
+            ),
+        )
+        return any(self.session.scalar(query.limit(1)) is not None for query in queries)
+
+    def _section_has_dependents(self, section_id: UUID) -> bool:
+        """Return whether any tenant-owned workflow or authorization scope references a section."""
+
+        tenant_id = self.actor.tenant_id
+        queries = (
+            select(SubjectOffering.id).where(
+                SubjectOffering.tenant_id == tenant_id,
+                SubjectOffering.section_id == section_id,
+            ),
+            select(StudentEnrollment.id).where(
+                StudentEnrollment.tenant_id == tenant_id,
+                StudentEnrollment.section_id == section_id,
+            ),
+            select(StudentProgression.id).where(
+                StudentProgression.tenant_id == tenant_id,
+                StudentProgression.target_section_id == section_id,
+            ),
+            select(StudentLifecycleRequest.id).where(
+                StudentLifecycleRequest.tenant_id == tenant_id,
+                StudentLifecycleRequest.target_section_id == section_id,
+            ),
+            select(MembershipRoleScope.id).where(
+                MembershipRoleScope.tenant_id == tenant_id,
+                MembershipRoleScope.scope_type == "section",
+                MembershipRoleScope.scope_reference_id == section_id,
+            ),
+        )
+        return any(self.session.scalar(query.limit(1)) is not None for query in queries)
+
+    def _term_has_dependents(self, term_id: UUID) -> bool:
+        """Return whether any tenant-owned delivery, calendar, or examination record uses a term."""
+
+        tenant_id = self.actor.tenant_id
+        queries = (
+            select(SubjectOffering.id).where(
+                SubjectOffering.tenant_id == tenant_id,
+                SubjectOffering.term_id == term_id,
+            ),
+            select(CalendarEvent.id).where(
+                CalendarEvent.tenant_id == tenant_id,
+                CalendarEvent.term_id == term_id,
+            ),
+            select(AssessmentScheme.id).where(
+                AssessmentScheme.tenant_id == tenant_id,
+                AssessmentScheme.term_id == term_id,
+            ),
+            select(ExamSession.id).where(
+                ExamSession.tenant_id == tenant_id,
+                ExamSession.term_id == term_id,
+            ),
+            select(GradeRule.id).where(
+                GradeRule.tenant_id == tenant_id,
+                GradeRule.term_id == term_id,
+            ),
+        )
+        return any(self.session.scalar(query.limit(1)) is not None for query in queries)
+
+    def _room_has_dependents(self, room_id: UUID) -> bool:
+        """Return whether any tenant-owned timetable or examination record uses a room."""
+
+        tenant_id = self.actor.tenant_id
+        queries = (
+            select(TimetablePeriod.id).where(
+                TimetablePeriod.tenant_id == tenant_id,
+                TimetablePeriod.room_id == room_id,
+            ),
+            select(ExamSchedule.id).where(
+                ExamSchedule.tenant_id == tenant_id,
+                ExamSchedule.room_id == room_id,
+            ),
+            select(ExamSeatAllocation.id).where(
+                ExamSeatAllocation.tenant_id == tenant_id,
+                ExamSeatAllocation.room_id == room_id,
+            ),
+            select(InvigilationAssignment.id).where(
+                InvigilationAssignment.tenant_id == tenant_id,
+                InvigilationAssignment.room_id == room_id,
+            ),
+        )
+        return any(self.session.scalar(query.limit(1)) is not None for query in queries)
+
+    def _curriculum_has_dependents(self, curriculum_id: UUID) -> bool:
+        """Return whether any tenant-owned subject mapping uses a curriculum."""
+
+        return (
+            self.session.scalar(
+                select(CurriculumSubject.id)
+                .where(
+                    CurriculumSubject.tenant_id == self.actor.tenant_id,
+                    CurriculumSubject.curriculum_id == curriculum_id,
+                )
+                .limit(1)
+            )
+            is not None
+        )
 
     def _validate_date_range(self, starts_on: Any, ends_on: Any, context: str) -> None:
         """Validate that the start date does not come after the end date."""
@@ -295,6 +554,20 @@ class AcademicsService:
         if term is None:
             return None
         changes = {}
+        if (
+            payload.academic_year_id is not None
+            and payload.academic_year_id != term.academic_year_id
+        ):
+            self._require_entity(AcademicYear, payload.academic_year_id, "academic_year_id")
+            if self._term_has_dependents(term.id):
+                raise AcademicsConflictError(
+                    "Term academic year cannot be changed after dependent records exist"
+                )
+            changes["academic_year_id"] = (
+                str(term.academic_year_id),
+                str(payload.academic_year_id),
+            )
+            term.academic_year_id = payload.academic_year_id
         if payload.display_name is not None:
             changes["display_name"] = (term.display_name, payload.display_name)
             term.display_name = payload.display_name
@@ -317,7 +590,12 @@ class AcademicsService:
         """Retrieve a paginated list of departments for the current tenant."""
 
         query = (
-            select(Department).where(Department.tenant_id == self.actor.tenant_id).order_by(Department.name)
+            select(Department)
+            .where(
+                Department.tenant_id == self.actor.tenant_id,
+                Department.id.in_(self._scoped_department_ids()),
+            )
+            .order_by(Department.name)
         )
         total = self.session.scalar(select(func.count()).select_from(query.subquery())) or 0
         items = list(self.session.scalars(query.offset(skip).limit(limit)))
@@ -328,7 +606,9 @@ class AcademicsService:
 
         return self.session.scalar(
             select(Department).where(
-                Department.id == department_id, Department.tenant_id == self.actor.tenant_id
+                Department.id == department_id,
+                Department.tenant_id == self.actor.tenant_id,
+                Department.id.in_(self._scoped_department_ids()),
             )
         )
 
@@ -368,7 +648,14 @@ class AcademicsService:
     def list_programs(self, skip: int = 0, limit: int = 100) -> tuple[list[Program], int]:
         """Retrieve a paginated list of programs for the current tenant."""
 
-        query = select(Program).where(Program.tenant_id == self.actor.tenant_id).order_by(Program.name)
+        query = (
+            select(Program)
+            .where(
+                Program.tenant_id == self.actor.tenant_id,
+                Program.id.in_(self._scoped_program_ids()),
+            )
+            .order_by(Program.name)
+        )
         total = self.session.scalar(select(func.count()).select_from(query.subquery())) or 0
         items = list(self.session.scalars(query.offset(skip).limit(limit)))
         return items, total
@@ -377,7 +664,11 @@ class AcademicsService:
         """Retrieve a single program by ID within the current tenant."""
 
         return self.session.scalar(
-            select(Program).where(Program.id == program_id, Program.tenant_id == self.actor.tenant_id)
+            select(Program).where(
+                Program.id == program_id,
+                Program.tenant_id == self.actor.tenant_id,
+                Program.id.in_(self._scoped_program_ids()),
+            )
         )
 
     def create_program(self, payload: ProgramCreate) -> Program:
@@ -404,6 +695,17 @@ class AcademicsService:
         if program is None:
             return None
         changes = {}
+        if payload.department_id is not None and payload.department_id != program.department_id:
+            self._require_entity(Department, payload.department_id, "department_id")
+            if self._program_has_dependents(program.id):
+                raise AcademicsConflictError(
+                    "Program department cannot be changed after dependent records exist"
+                )
+            changes["department_id"] = (
+                str(program.department_id),
+                str(payload.department_id),
+            )
+            program.department_id = payload.department_id
         if payload.name is not None:
             changes["name"] = (program.name, payload.name)
             program.name = payload.name
@@ -425,7 +727,14 @@ class AcademicsService:
     def list_subjects(self, skip: int = 0, limit: int = 100) -> tuple[list[Subject], int]:
         """Retrieve a paginated list of subjects for the current tenant."""
 
-        query = select(Subject).where(Subject.tenant_id == self.actor.tenant_id).order_by(Subject.name)
+        query = (
+            select(Subject)
+            .where(
+                Subject.tenant_id == self.actor.tenant_id,
+                Subject.department_id.in_(self._scoped_department_ids()),
+            )
+            .order_by(Subject.name)
+        )
         total = self.session.scalar(select(func.count()).select_from(query.subquery())) or 0
         items = list(self.session.scalars(query.offset(skip).limit(limit)))
         return items, total
@@ -434,7 +743,11 @@ class AcademicsService:
         """Retrieve a single subject by ID within the current tenant."""
 
         return self.session.scalar(
-            select(Subject).where(Subject.id == subject_id, Subject.tenant_id == self.actor.tenant_id)
+            select(Subject).where(
+                Subject.id == subject_id,
+                Subject.tenant_id == self.actor.tenant_id,
+                Subject.department_id.in_(self._scoped_department_ids()),
+            )
         )
 
     def create_subject(self, payload: SubjectCreate) -> Subject:
@@ -460,6 +773,17 @@ class AcademicsService:
         if subject is None:
             return None
         changes = {}
+        if payload.department_id is not None and payload.department_id != subject.department_id:
+            self._require_entity(Department, payload.department_id, "department_id")
+            if self._subject_has_dependents(subject.id):
+                raise AcademicsConflictError(
+                    "Subject department cannot be changed after dependent records exist"
+                )
+            changes["department_id"] = (
+                str(subject.department_id),
+                str(payload.department_id),
+            )
+            subject.department_id = payload.department_id
         if payload.name is not None:
             changes["name"] = (subject.name, payload.name)
             subject.name = payload.name
@@ -480,7 +804,10 @@ class AcademicsService:
 
         query = (
             select(Batch)
-            .where(Batch.tenant_id == self.actor.tenant_id)
+            .where(
+                Batch.tenant_id == self.actor.tenant_id,
+                Batch.id.in_(self._scoped_batch_ids()),
+            )
             .order_by(Batch.admission_year.desc(), Batch.display_name)
         )
         total = self.session.scalar(select(func.count()).select_from(query.subquery())) or 0
@@ -491,7 +818,11 @@ class AcademicsService:
         """Retrieve a single batch by ID within the current tenant."""
 
         return self.session.scalar(
-            select(Batch).where(Batch.id == batch_id, Batch.tenant_id == self.actor.tenant_id)
+            select(Batch).where(
+                Batch.id == batch_id,
+                Batch.tenant_id == self.actor.tenant_id,
+                Batch.id.in_(self._scoped_batch_ids()),
+            )
         )
 
     def create_batch(self, payload: BatchCreate) -> Batch:
@@ -516,6 +847,14 @@ class AcademicsService:
         if batch is None:
             return None
         changes = {}
+        if payload.program_id is not None and payload.program_id != batch.program_id:
+            self._require_entity(Program, payload.program_id, "program_id")
+            if self._batch_has_dependents(batch.id):
+                raise AcademicsConflictError(
+                    "Batch program cannot be changed after dependent records exist"
+                )
+            changes["program_id"] = (str(batch.program_id), str(payload.program_id))
+            batch.program_id = payload.program_id
         if payload.display_name is not None:
             changes["display_name"] = (batch.display_name, payload.display_name)
             batch.display_name = payload.display_name
@@ -533,7 +872,10 @@ class AcademicsService:
 
         query = (
             select(Section)
-            .where(Section.tenant_id == self.actor.tenant_id)
+            .where(
+                Section.tenant_id == self.actor.tenant_id,
+                Section.batch_id.in_(self._scoped_batch_ids()),
+            )
             .order_by(Section.batch_id, Section.code)
         )
         total = self.session.scalar(select(func.count()).select_from(query.subquery())) or 0
@@ -544,7 +886,11 @@ class AcademicsService:
         """Retrieve a single section by ID within the current tenant."""
 
         return self.session.scalar(
-            select(Section).where(Section.id == section_id, Section.tenant_id == self.actor.tenant_id)
+            select(Section).where(
+                Section.id == section_id,
+                Section.tenant_id == self.actor.tenant_id,
+                Section.batch_id.in_(self._scoped_batch_ids()),
+            )
         )
 
     def create_section(self, payload: SectionCreate) -> Section:
@@ -570,6 +916,14 @@ class AcademicsService:
         if section is None:
             return None
         changes = {}
+        if payload.batch_id is not None and payload.batch_id != section.batch_id:
+            self._require_entity(Batch, payload.batch_id, "batch_id")
+            if self._section_has_dependents(section.id):
+                raise AcademicsConflictError(
+                    "Section batch cannot be changed after dependent records exist"
+                )
+            changes["batch_id"] = (str(section.batch_id), str(payload.batch_id))
+            section.batch_id = payload.batch_id
         if payload.display_name is not None:
             changes["display_name"] = (section.display_name, payload.display_name)
             section.display_name = payload.display_name
@@ -630,6 +984,14 @@ class AcademicsService:
         if room is None:
             return None
         changes = {}
+        if payload.campus_id is not None and payload.campus_id != room.campus_id:
+            self._require_entity(Campus, payload.campus_id, "campus_id")
+            if self._room_has_dependents(room.id):
+                raise AcademicsConflictError(
+                    "Room campus cannot be changed after dependent records exist"
+                )
+            changes["campus_id"] = (str(room.campus_id), str(payload.campus_id))
+            room.campus_id = payload.campus_id
         if payload.name is not None:
             changes["name"] = (room.name, payload.name)
             room.name = payload.name
@@ -787,7 +1149,10 @@ class AcademicsService:
 
         query = (
             select(Curriculum)
-            .where(Curriculum.tenant_id == self.actor.tenant_id)
+            .where(
+                Curriculum.tenant_id == self.actor.tenant_id,
+                Curriculum.id.in_(self._scoped_curriculum_ids()),
+            )
             .order_by(Curriculum.code)
         )
         total = self.session.scalar(select(func.count()).select_from(query.subquery())) or 0
@@ -801,6 +1166,7 @@ class AcademicsService:
             select(Curriculum).where(
                 Curriculum.id == curriculum_id,
                 Curriculum.tenant_id == self.actor.tenant_id,
+                Curriculum.id.in_(self._scoped_curriculum_ids()),
             )
         )
 
@@ -823,6 +1189,39 @@ class AcademicsService:
         self._audit("create", "curriculum", curriculum.id, {"code": payload.code})
         return curriculum
 
+    def _update_curriculum_parents(
+        self,
+        curriculum: Curriculum,
+        payload: CurriculumUpdate,
+        changes: dict[str, tuple[object, object]],
+    ) -> None:
+        """Validate and apply mutable curriculum parent relationships."""
+
+        program_changed = (
+            payload.program_id is not None and payload.program_id != curriculum.program_id
+        )
+        regulation_changed = (
+            payload.regulation_id is not None
+            and payload.regulation_id != curriculum.regulation_id
+        )
+        if program_changed:
+            self._require_entity(Program, payload.program_id, "program_id")
+        if regulation_changed:
+            self._require_entity(Regulation, payload.regulation_id, "regulation_id")
+        if (program_changed or regulation_changed) and self._curriculum_has_dependents(curriculum.id):
+            raise AcademicsConflictError(
+                "Curriculum parents cannot be changed after subject mappings exist"
+            )
+        if program_changed and payload.program_id is not None:
+            changes["program_id"] = (str(curriculum.program_id), str(payload.program_id))
+            curriculum.program_id = payload.program_id
+        if regulation_changed and payload.regulation_id is not None:
+            changes["regulation_id"] = (
+                str(curriculum.regulation_id),
+                str(payload.regulation_id),
+            )
+            curriculum.regulation_id = payload.regulation_id
+
     def update_curriculum(self, curriculum_id: UUID, payload: CurriculumUpdate) -> Curriculum | None:
         """Update one curriculum and audit changed fields only."""
 
@@ -830,6 +1229,7 @@ class AcademicsService:
         if curriculum is None:
             return None
         changes: dict[str, tuple[object, object]] = {}
+        self._update_curriculum_parents(curriculum, payload, changes)
         if payload.title is not None:
             changes["title"] = (curriculum.title, payload.title)
             curriculum.title = payload.title
@@ -854,7 +1254,10 @@ class AcademicsService:
 
         query = (
             select(CurriculumSubject)
-            .where(CurriculumSubject.tenant_id == self.actor.tenant_id)
+            .where(
+                CurriculumSubject.tenant_id == self.actor.tenant_id,
+                CurriculumSubject.curriculum_id.in_(self._scoped_curriculum_ids()),
+            )
             .order_by(CurriculumSubject.curriculum_id, CurriculumSubject.term_number)
         )
         total = self.session.scalar(select(func.count()).select_from(query.subquery())) or 0
@@ -868,6 +1271,7 @@ class AcademicsService:
             select(CurriculumSubject).where(
                 CurriculumSubject.id == mapping_id,
                 CurriculumSubject.tenant_id == self.actor.tenant_id,
+                CurriculumSubject.curriculum_id.in_(self._scoped_curriculum_ids()),
             )
         )
 
@@ -905,6 +1309,17 @@ class AcademicsService:
         if mapping is None:
             return None
         changes: dict[str, tuple[object, object]] = {}
+        if payload.curriculum_id is not None and payload.curriculum_id != mapping.curriculum_id:
+            self._require_entity(Curriculum, payload.curriculum_id, "curriculum_id")
+            changes["curriculum_id"] = (
+                str(mapping.curriculum_id),
+                str(payload.curriculum_id),
+            )
+            mapping.curriculum_id = payload.curriculum_id
+        if payload.subject_id is not None and payload.subject_id != mapping.subject_id:
+            self._require_entity(Subject, payload.subject_id, "subject_id")
+            changes["subject_id"] = (str(mapping.subject_id), str(payload.subject_id))
+            mapping.subject_id = payload.subject_id
         if payload.term_number is not None:
             changes["term_number"] = (mapping.term_number, payload.term_number)
             mapping.term_number = payload.term_number
@@ -968,22 +1383,53 @@ class AcademicsService:
         self._audit("create", "calendar_event", event.id, {"name": payload.name})
         return event
 
+    def _update_calendar_event_parents(
+        self,
+        event: CalendarEvent,
+        payload: CalendarEventUpdate,
+        changes: dict[str, tuple[object, object]],
+    ) -> None:
+        """Validate and apply one calendar event's Academic Year and optional Term."""
+
+        year_changed = (
+            payload.academic_year_id is not None
+            and payload.academic_year_id != event.academic_year_id
+        )
+        if year_changed:
+            self._require_entity(AcademicYear, payload.academic_year_id, "academic_year_id")
+        next_year_id = payload.academic_year_id if year_changed else event.academic_year_id
+        term_supplied = "term_id" in payload.model_fields_set
+        next_term_id = payload.term_id if term_supplied else event.term_id
+        if next_term_id is not None:
+            term = self._require_entity(Term, next_term_id, "term_id")
+            if term.academic_year_id != next_year_id:
+                raise AcademicsValidationError(
+                    "term_id must belong to the given academic_year_id"
+                )
+        if year_changed and payload.academic_year_id is not None:
+            changes["academic_year_id"] = (
+                str(event.academic_year_id),
+                str(payload.academic_year_id),
+            )
+            event.academic_year_id = payload.academic_year_id
+        if term_supplied and next_term_id != event.term_id:
+            changes["term_id"] = (
+                str(event.term_id) if event.term_id is not None else None,
+                str(next_term_id) if next_term_id is not None else None,
+            )
+            event.term_id = next_term_id
+
     def update_calendar_event(self, event_id: UUID, payload: CalendarEventUpdate) -> CalendarEvent | None:
         """Update one calendar event and audit changed fields only."""
 
         event = self.get_calendar_event(event_id)
         if event is None:
             return None
-        previous_term_id = event.term_id
-        if payload.term_id is not None:
-            term = self._require_entity(Term, payload.term_id, "term_id")
-            if term.academic_year_id != event.academic_year_id:
-                raise AcademicsValidationError("term_id must belong to the same academic_year_id")
-            event.term_id = term.id
+        changes: dict[str, tuple[object, object]] = {}
+        self._update_calendar_event_parents(event, payload, changes)
         start_date = payload.starts_on if payload.starts_on is not None else event.starts_on
         end_date = payload.ends_on if payload.ends_on is not None else event.ends_on
         self._validate_date_range(start_date, end_date, "calendar event")
-        changes: dict[str, tuple[object, object]] = {}
         if payload.name is not None:
             changes["name"] = (event.name, payload.name)
             event.name = payload.name
@@ -1002,8 +1448,6 @@ class AcademicsService:
         if payload.status is not None:
             changes["status"] = (event.status, payload.status)
             event.status = payload.status
-        if payload.term_id is not None:
-            changes["term_id"] = (str(previous_term_id), str(payload.term_id))
         if changes:
             self.session.flush()
             self._audit("update", "calendar_event", event.id, changes)
@@ -1107,23 +1551,46 @@ class AcademicsService:
             "departments": self.session.scalar(
                 select(func.count())
                 .select_from(Department)
-                .where(Department.tenant_id == self.actor.tenant_id)
+                .where(
+                    Department.tenant_id == self.actor.tenant_id,
+                    Department.id.in_(self._scoped_department_ids()),
+                )
             )
             or 0,
             "programs": self.session.scalar(
-                select(func.count()).select_from(Program).where(Program.tenant_id == self.actor.tenant_id)
+                select(func.count())
+                .select_from(Program)
+                .where(
+                    Program.tenant_id == self.actor.tenant_id,
+                    Program.id.in_(self._scoped_program_ids()),
+                )
             )
             or 0,
             "subjects": self.session.scalar(
-                select(func.count()).select_from(Subject).where(Subject.tenant_id == self.actor.tenant_id)
+                select(func.count())
+                .select_from(Subject)
+                .where(
+                    Subject.tenant_id == self.actor.tenant_id,
+                    Subject.department_id.in_(self._scoped_department_ids()),
+                )
             )
             or 0,
             "batches": self.session.scalar(
-                select(func.count()).select_from(Batch).where(Batch.tenant_id == self.actor.tenant_id)
+                select(func.count())
+                .select_from(Batch)
+                .where(
+                    Batch.tenant_id == self.actor.tenant_id,
+                    Batch.id.in_(self._scoped_batch_ids()),
+                )
             )
             or 0,
             "sections": self.session.scalar(
-                select(func.count()).select_from(Section).where(Section.tenant_id == self.actor.tenant_id)
+                select(func.count())
+                .select_from(Section)
+                .where(
+                    Section.tenant_id == self.actor.tenant_id,
+                    Section.batch_id.in_(self._scoped_batch_ids()),
+                )
             )
             or 0,
             "rooms": self.session.scalar(
@@ -1143,13 +1610,21 @@ class AcademicsService:
             )
             or 0,
             "curricula": self.session.scalar(
-                select(func.count()).select_from(Curriculum).where(Curriculum.tenant_id == self.actor.tenant_id)
+                select(func.count())
+                .select_from(Curriculum)
+                .where(
+                    Curriculum.tenant_id == self.actor.tenant_id,
+                    Curriculum.id.in_(self._scoped_curriculum_ids()),
+                )
             )
             or 0,
             "curriculum_subjects": self.session.scalar(
                 select(func.count())
                 .select_from(CurriculumSubject)
-                .where(CurriculumSubject.tenant_id == self.actor.tenant_id)
+                .where(
+                    CurriculumSubject.tenant_id == self.actor.tenant_id,
+                    CurriculumSubject.curriculum_id.in_(self._scoped_curriculum_ids()),
+                )
             )
             or 0,
             "calendar_events": self.session.scalar(

@@ -40,6 +40,7 @@ import {
   restoreSession,
   switchTenant,
   type SelectableMembership,
+  type ActorScope,
   type SessionIdentity,
   type TokenResponse,
 } from "./api";
@@ -49,7 +50,7 @@ import OperationalModules from "./OperationalModules";
 import PlatformAdministration from "./PlatformAdministration";
 
 type TenantKey = "indus-arts-science" | "indus-law";
-type RoleKey = "admin" | "applicant" | "student" | "parent" | "faculty" | "hod" | "accountant" | "examination" | "admission" | "event";
+type RoleKey = "admin" | "applicant" | "student" | "parent" | "faculty" | "hod" | "advisor" | "accountant" | "examination" | "admission" | "event";
 type Theme = "campus" | "scholar" | "contrast";
 type Icon = ComponentType<{ "aria-hidden"?: boolean }>;
 
@@ -66,6 +67,7 @@ type PortalSession = DemoAccount & {
   accountId: string;
   membershipId: string;
   permissions: string[];
+  scopes: ActorScope[];
 };
 
 type Tenant = {
@@ -106,9 +108,11 @@ const demoAccounts: DemoAccount[] = [
   { role: "admin", roleLabel: "College Administrator", name: "Law College Administrator", email: "admin@indus-law.demo", tenant: "indus-law", initials: "LA" },
   { role: "applicant", roleLabel: "Applicant", name: "Demo Applicant", email: "applicant.indus-arts-science@demo.4by4.local", tenant: "indus-arts-science", initials: "DA" },
   { role: "student", roleLabel: "Student", name: "Demo Student", email: "student.indus-arts-science@demo.4by4.local", tenant: "indus-arts-science", initials: "DS" },
+  { role: "student", roleLabel: "Student", name: "Advisor Class Student", email: "advisor-student.indus-arts-science@demo.4by4.local", tenant: "indus-arts-science", initials: "AS" },
   { role: "parent", roleLabel: "Parent/Guardian", name: "Demo Parent", email: "guardian.indus-arts-science@demo.4by4.local", tenant: "indus-arts-science", initials: "DP" },
   { role: "faculty", roleLabel: "Faculty", name: "Demo Faculty", email: "faculty.indus-arts-science@demo.4by4.local", tenant: "indus-arts-science", initials: "DF" },
   { role: "hod", roleLabel: "Head of Department", name: "Demo HOD", email: "hod@indus.demo", tenant: "indus-arts-science", initials: "DH" },
+  { role: "advisor", roleLabel: "Class Advisor", name: "Demo Class Advisor", email: "advisor@indus.demo", tenant: "indus-arts-science", initials: "CA" },
   { role: "accountant", roleLabel: "Accountant/Cashier", name: "Demo Accountant", email: "accountant@indus.demo", tenant: "indus-arts-science", initials: "DA" },
   { role: "examination", roleLabel: "Examination Controller", name: "Demo Examination Controller", email: "exams@indus.demo", tenant: "indus-arts-science", initials: "DE" },
   { role: "admission", roleLabel: "Admission Officer", name: "Demo Admission Officer", email: "admissions@indus.demo", tenant: "indus-arts-science", initials: "DO" },
@@ -122,6 +126,7 @@ const roleIcons: Record<RoleKey, Icon> = {
   parent: UsersRound,
   faculty: BookOpen,
   hod: School,
+  advisor: ClipboardCheck,
   accountant: IndianRupee,
   examination: ReceiptText,
   admission: School,
@@ -138,7 +143,7 @@ const roleNavigation: Record<RoleKey, { label: string; items: { to: string; labe
     { label: "Admissions", items: [{ to: "/portal/applicant", label: "My application", icon: FileUp }] },
   ],
   student: [
-    { label: "My College", items: [{ to: "/portal/dashboard", label: "My dashboard", icon: LayoutDashboard }, { to: "/portal/timetable", label: "Timetable", icon: Clock3 }, { to: "/portal/attendance", label: "Attendance", icon: ClipboardCheck }, { to: "/portal/fees", label: "Fees & receipts", icon: ReceiptText }, { to: "/portal/examinations", label: "Results", icon: GraduationCap }, { to: "/portal/notices", label: "Notices", icon: Bell }, { to: "/portal/events", label: "Events", icon: Trophy }] },
+    { label: "My College", items: [{ to: "/portal/dashboard", label: "My dashboard", icon: LayoutDashboard }, { to: "/portal/students", label: "My records", icon: UsersRound }, { to: "/portal/timetable", label: "Timetable", icon: Clock3 }, { to: "/portal/learning", label: "Learning materials", icon: BookOpen }, { to: "/portal/attendance", label: "Attendance", icon: ClipboardCheck }, { to: "/portal/fees", label: "Fees & receipts", icon: ReceiptText }, { to: "/portal/examinations", label: "Results", icon: GraduationCap }, { to: "/portal/notices", label: "Notices", icon: Bell }, { to: "/portal/events", label: "Events", icon: Trophy }] },
   ],
   parent: [
     { label: "My Student", items: [{ to: "/portal/dashboard", label: "Progress summary", icon: LayoutDashboard }, { to: "/portal/attendance", label: "Attendance", icon: ClipboardCheck }, { to: "/portal/fees", label: "Fees & receipts", icon: ReceiptText }, { to: "/portal/notices", label: "College notices", icon: Bell }] },
@@ -148,6 +153,9 @@ const roleNavigation: Record<RoleKey, { label: string; items: { to: string; labe
   ],
   hod: [
     { label: "Department", items: [{ to: "/portal/dashboard", label: "HOD dashboard", icon: LayoutDashboard }, { to: "/portal/faculty", label: "Faculty workload", icon: UsersRound }, { to: "/portal/students", label: "Department students", icon: GraduationCap }, { to: "/portal/attendance", label: "Attendance review", icon: ClipboardCheck }, { to: "/portal/academics", label: "Academic progress", icon: BookOpen }] },
+  ],
+  advisor: [
+    { label: "Assigned Class", items: [{ to: "/portal/dashboard", label: "Advisor dashboard", icon: LayoutDashboard }, { to: "/portal/students", label: "My students", icon: GraduationCap }, { to: "/portal/timetable", label: "Class timetable", icon: Clock3 }, { to: "/portal/attendance", label: "Attendance review", icon: ClipboardCheck }, { to: "/portal/notices", label: "Notices", icon: Bell }] },
   ],
   accountant: [
     { label: "Finance", items: [{ to: "/portal/dashboard", label: "Finance dashboard", icon: LayoutDashboard }, { to: "/portal/fees", label: "Fees & payments", icon: IndianRupee }, { to: "/portal/students", label: "Student accounts", icon: GraduationCap }] },
@@ -234,23 +242,24 @@ function createPortalSession(identity: SessionIdentity, authentication: TokenRes
     accountId: authentication.actor.account_id,
     membershipId: authentication.actor.membership_id,
     permissions: authentication.actor.permissions,
+    scopes: authentication.actor.scopes,
   };
 }
 
-const roleLabels: Record<RoleKey, string> = { admin: "College Administrator", applicant: "Applicant", student: "Student", parent: "Parent/Guardian", faculty: "Faculty", hod: "Head of Department", accountant: "Accountant/Cashier", examination: "Examination Controller", admission: "Admission Officer", event: "Activity Coordinator" };
+const roleLabels: Record<RoleKey, string> = { admin: "College Administrator", applicant: "Applicant", student: "Student", parent: "Parent/Guardian", faculty: "Faculty", hod: "Head of Department", advisor: "Class Advisor", accountant: "Accountant/Cashier", examination: "Examination Controller", admission: "Admission Officer", event: "Activity Coordinator" };
 
 /** Resolve the highest-priority implemented portal role from actor claims. */
 function resolvePortalRole(roleKeys: string[]): RoleKey | null {
-  const mapping: Array<[string, RoleKey]> = [["college_administrator", "admin"], ["head_of_department", "hod"], ["examination_controller", "examination"], ["accountant_cashier", "accountant"], ["admission_officer", "admission"], ["activity_coordinator", "event"], ["faculty", "faculty"], ["parent_guardian", "parent"], ["applicant", "applicant"], ["student", "student"]];
+  const mapping: Array<[string, RoleKey]> = [["college_administrator", "admin"], ["head_of_department", "hod"], ["class_advisor", "advisor"], ["examination_controller", "examination"], ["accountant_cashier", "accountant"], ["admission_officer", "admission"], ["activity_coordinator", "event"], ["faculty", "faculty"], ["parent_guardian", "parent"], ["applicant", "applicant"], ["student", "student"]];
   return mapping.find(([key]) => roleKeys.includes(key))?.[1] ?? null;
 }
 
-const routePermissions: Record<string, string> = { "/portal/access": "identity.accounts.read", "/portal/admissions": "admissions.applications.read", "/portal/applicant": "admissions.applications.own", "/portal/students": "students.records.read", "/portal/faculty": "faculty.records.read", "/portal/academics": "academics.settings.read", "/portal/timetable": "timetable.read", "/portal/attendance": "attendance.student.read", "/portal/fees": "fees.records.read", "/portal/examinations": "examinations.results.read", "/portal/notices": "communications.notices.read", "/portal/events": "activities.records.read" };
+const routePermissions: Record<string, string> = { "/portal/access": "identity.accounts.read", "/portal/admissions": "admissions.applications.read", "/portal/applicant": "admissions.applications.own", "/portal/students": "students.records.read", "/portal/faculty": "faculty.records.read", "/portal/academics": "academics.settings.read", "/portal/timetable": "timetable.read", "/portal/learning": "timetable.read", "/portal/attendance": "attendance.student.read", "/portal/fees": "fees.records.read", "/portal/examinations": "examinations.results.read", "/portal/notices": "communications.notices.read", "/portal/events": "activities.records.read" };
 
 /** Return whether an actor can open a source-backed portal route. */
 function canOpenRoute(path: string, permissions: string[]): boolean {
   const permission = routePermissions[path];
-  return path === "/portal/dashboard" || permission === undefined || permissions.includes(permission) || (path === "/portal/notices" && permissions.includes("communications.notices.manage"));
+  return path === "/portal/dashboard" || permission === undefined || permissions.includes(permission) || (path === "/portal/students" && permissions.some((item) => ["students.own.read", "students.linked.read"].includes(item))) || (path === "/portal/notices" && permissions.includes("communications.notices.manage"));
 }
 
 function PublicHome() {

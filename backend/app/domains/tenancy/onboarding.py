@@ -7,7 +7,7 @@ from datetime import time as time_type
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select, text
+from sqlalchemy import delete, select, text
 from sqlalchemy.orm import Session
 
 from app.domains.identity.catalog import ROLE_TEMPLATES
@@ -84,6 +84,12 @@ DEMO_PORTAL_ROLES = (
     ),
     ("student.indus-arts-science@demo.4by4.local", "Demo Student", "student", "own_record"),
     (
+        "advisor-student.indus-arts-science@demo.4by4.local",
+        "Advisor Class Student",
+        "student",
+        "own_record",
+    ),
+    (
         "guardian.indus-arts-science@demo.4by4.local",
         "Demo Parent",
         "parent_guardian",
@@ -91,6 +97,7 @@ DEMO_PORTAL_ROLES = (
     ),
     ("faculty.indus-arts-science@demo.4by4.local", "Demo Faculty", "faculty", "subject_offering"),
     ("hod@indus.demo", "Demo HOD", "head_of_department", "department"),
+    ("advisor@indus.demo", "Demo Class Advisor", "class_advisor", "section"),
     ("accountant@indus.demo", "Demo Accountant", "accountant_cashier", "institution"),
     ("exams@indus.demo", "Demo Examination Controller", "examination_controller", "institution"),
     ("admissions@indus.demo", "Demo Admission Officer", "admission_officer", "institution"),
@@ -186,7 +193,7 @@ class TenantOnboardingService:
     def seed_demo_portal_roles(self, password: str) -> tuple[Account, ...]:
         """Idempotently seed synthetic role-portal accounts and authoritative scopes."""
 
-        from app.domains.academics.models import Department
+        from app.domains.academics.models import Subject
         from app.domains.admissions.models import Applicant, ApplicantAccess
         from app.domains.delivery.models import SubjectOffering
         from app.domains.students.models import Student
@@ -195,6 +202,19 @@ class TenantOnboardingService:
             item for item in self.onboard_initial_tenants() if item.key == "indus-arts-science"
         )
         self._set_tenant_context(tenant.id)
+        scoped_offering = self.session.scalar(
+            select(SubjectOffering)
+            .where(SubjectOffering.tenant_id == tenant.id)
+            .order_by(SubjectOffering.created_at)
+        )
+        if scoped_offering is None:
+            raise RuntimeError("Demo role scope 'subject_offering' has no source record")
+        scoped_department_id = self.session.scalar(
+            select(Subject.department_id).where(
+                Subject.tenant_id == tenant.id,
+                Subject.id == scoped_offering.subject_id,
+            )
+        )
         scope_references = {
             "own_record": None,
             "linked_student": self.session.scalar(
@@ -202,16 +222,9 @@ class TenantOnboardingService:
                 .where(Student.tenant_id == tenant.id)
                 .order_by(Student.created_at)
             ),
-            "subject_offering": self.session.scalar(
-                select(SubjectOffering.id)
-                .where(SubjectOffering.tenant_id == tenant.id)
-                .order_by(SubjectOffering.created_at)
-            ),
-            "department": self.session.scalar(
-                select(Department.id)
-                .where(Department.tenant_id == tenant.id)
-                .order_by(Department.created_at)
-            ),
+            "subject_offering": scoped_offering.id,
+            "department": scoped_department_id,
+            "section": scoped_offering.section_id,
             "institution": None,
         }
         password_hash = hash_password(password)
@@ -242,6 +255,18 @@ class TenantOnboardingService:
             scope_reference_id = scope_references[scope_type]
             if scope_type not in {"institution", "own_record"} and scope_reference_id is None:
                 raise RuntimeError(f"Demo role scope '{scope_type}' has no source record")
+            self.session.execute(
+                delete(MembershipRoleScope).where(
+                    MembershipRoleScope.tenant_id == tenant.id,
+                    MembershipRoleScope.assignment_id == assignment.id,
+                    (
+                        (MembershipRoleScope.scope_type != scope_type)
+                        | MembershipRoleScope.scope_reference_id.is_distinct_from(
+                            scope_reference_id
+                        )
+                    ),
+                )
+            )
             scope = self.session.scalar(
                 select(MembershipRoleScope).where(
                     MembershipRoleScope.tenant_id == tenant.id,
@@ -760,6 +785,7 @@ class TenantOnboardingService:
             ClassSession,
             FacultyAllocation,
             FacultyProfile,
+            LearningMaterial,
             SubjectOffering,
             TimetablePeriod,
         )
@@ -1193,6 +1219,45 @@ class TenantOnboardingService:
                 "status": "active",
             },
         )
+        advisor_student_person = self._get_or_create_entity(
+            Person,
+            {"tenant_id": tenant_id, "email": f"advisor-student.{tenant_key}@demo.4by4.local"},
+            {
+                "tenant_id": tenant_id,
+                "full_name": "Advisor Class Student",
+                "email": f"advisor-student.{tenant_key}@demo.4by4.local",
+                "mobile_number": f"+91550000{1000 if tenant_key == 'indus-arts-science' else 2000}",
+                "date_of_birth": date_type(2008, 8, 20),
+            },
+        )
+        advisor_student = self._get_or_create_entity(
+            Student,
+            {"tenant_id": tenant_id, "registration_number": f"REG-{tenant_key.upper()}-ADV-001"},
+            {
+                "tenant_id": tenant_id,
+                "person_id": advisor_student_person.id,
+                "source_application_id": None,
+                "registration_number": f"REG-{tenant_key.upper()}-ADV-001",
+                "status": "active",
+            },
+        )
+        self._get_or_create_entity(
+            StudentEnrollment,
+            {
+                "tenant_id": tenant_id,
+                "student_id": advisor_student.id,
+                "academic_year_id": academic_year.id,
+            },
+            {
+                "tenant_id": tenant_id,
+                "student_id": advisor_student.id,
+                "academic_year_id": academic_year.id,
+                "program_id": program.id,
+                "batch_id": batch.id,
+                "section_id": section.id,
+                "status": "active",
+            },
+        )
         self._get_or_create_entity(
             StudentStatusHistory,
             {
@@ -1248,6 +1313,22 @@ class TenantOnboardingService:
                 "subject_id": subject_one.id,
                 "section_id": section.id,
                 "status": "active",
+            },
+        )
+        self._get_or_create_entity(
+            LearningMaterial,
+            {
+                "tenant_id": tenant_id,
+                "offering_id": offering.id,
+                "title": "Computer Science course guide",
+            },
+            {
+                "tenant_id": tenant_id,
+                "offering_id": offering.id,
+                "title": "Computer Science course guide",
+                "material_type": "link",
+                "resource_url": "https://example.com/indus/computer-science-course-guide",
+                "description": "Synthetic reading guide for the assigned subject offering.",
             },
         )
         self._get_or_create_entity(
@@ -1403,6 +1484,35 @@ class TenantOnboardingService:
                 "tenant_id": tenant_id,
                 "session_id": class_session.id,
                 "student_id": student.id,
+                "status": "present",
+                "state": "submitted",
+            },
+        )
+        advisor_class_session = self._get_or_create_entity(
+            ClassSession,
+            {
+                "tenant_id": tenant_id,
+                "period_id": period.id,
+                "session_date": date_type(2026, 7, 13),
+            },
+            {
+                "tenant_id": tenant_id,
+                "period_id": period.id,
+                "session_date": date_type(2026, 7, 13),
+                "state": "submitted",
+            },
+        )
+        self._get_or_create_entity(
+            AttendanceRecord,
+            {
+                "tenant_id": tenant_id,
+                "session_id": advisor_class_session.id,
+                "student_id": advisor_student.id,
+            },
+            {
+                "tenant_id": tenant_id,
+                "session_id": advisor_class_session.id,
+                "student_id": advisor_student.id,
                 "status": "present",
                 "state": "submitted",
             },

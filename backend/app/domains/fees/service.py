@@ -9,7 +9,7 @@ from uuid import UUID
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from app.domains.academics.models import AcademicYear, Program
+from app.domains.academics.models import AcademicYear, CollegeSetting, Program
 from app.domains.audit.models import AuditEvent
 from app.domains.fees.models import (
     CashierSession,
@@ -39,10 +39,13 @@ from app.domains.fees.schemas import (
     GatewayReconciliationCreate,
     InvoiceLineCreate,
     PaymentCreate,
+    ReceiptDocument,
+    ReceiptDocumentAllocation,
     StudentInvoiceCreate,
     StudentLedgerEntry,
 )
-from app.domains.students.models import Student, StudentEnrollment
+from app.domains.students.models import Person, Student, StudentEnrollment
+from app.domains.tenancy.models import Tenant
 from app.security_context import ActorContext, resolve_actor_student_ids
 
 ZERO = Decimal("0.00")
@@ -484,6 +487,9 @@ class FeesService:
         """List posted and reversed payments for the current tenant."""
 
         query = select(Payment).where(Payment.tenant_id == self.actor.tenant_id)
+        student_ids = resolve_actor_student_ids(self.session, self.actor)
+        if student_ids is not None:
+            query = query.where(Payment.student_id.in_(student_ids))
         if student_id is not None:
             query = query.where(Payment.student_id == student_id)
         query = query.order_by(Payment.paid_on.desc(), Payment.created_at.desc())
@@ -492,9 +498,14 @@ class FeesService:
     def get_payment(self, payment_id: UUID) -> Payment | None:
         """Return one payment by ID for the authenticated tenant."""
 
-        return self.session.scalar(
-            select(Payment).where(Payment.tenant_id == self.actor.tenant_id, Payment.id == payment_id)
+        query = select(Payment).where(
+            Payment.tenant_id == self.actor.tenant_id,
+            Payment.id == payment_id,
         )
+        student_ids = resolve_actor_student_ids(self.session, self.actor)
+        if student_ids is not None:
+            query = query.where(Payment.student_id.in_(student_ids))
+        return self.session.scalar(query)
 
     def list_payment_allocations(self, payment_id: UUID) -> list[PaymentAllocation]:
         """Return payment allocation rows for one payment."""
@@ -615,6 +626,84 @@ class FeesService:
             {"receipt_number": receipt.receipt_number, "payment_id": str(payment_id)},
         )
         return receipt
+
+    def get_receipt_document(self, payment_id: UUID) -> ReceiptDocument | None:
+        """Derive one printable receipt from an authorized issued payment and source allocations."""
+
+        payment = self.get_payment(payment_id)
+        if payment is None:
+            return None
+        receipt = self.session.scalar(
+            select(Receipt).where(
+                Receipt.tenant_id == self.actor.tenant_id,
+                Receipt.payment_id == payment.id,
+            )
+        )
+        if receipt is None:
+            return None
+        student_row = self.session.execute(
+            select(Student, Person)
+            .join(
+                Person,
+                (Person.tenant_id == Student.tenant_id)
+                & (Person.id == Student.person_id),
+            )
+            .where(
+                Student.tenant_id == self.actor.tenant_id,
+                Student.id == payment.student_id,
+            )
+        ).one()
+        allocation_rows = list(
+            self.session.execute(
+                select(PaymentAllocation, StudentInvoice)
+                .join(
+                    StudentInvoice,
+                    (StudentInvoice.tenant_id == PaymentAllocation.tenant_id)
+                    & (StudentInvoice.id == PaymentAllocation.invoice_id),
+                )
+                .where(
+                    PaymentAllocation.tenant_id == self.actor.tenant_id,
+                    PaymentAllocation.payment_id == payment.id,
+                )
+                .order_by(StudentInvoice.invoice_number),
+            )
+        )
+        tenant = self.session.scalar(select(Tenant).where(Tenant.id == self.actor.tenant_id))
+        setting = self.session.scalar(
+            select(CollegeSetting).where(CollegeSetting.tenant_id == self.actor.tenant_id)
+        )
+        if tenant is None:
+            raise FeesValidationError("Tenant branding is unavailable")
+        allocations = [
+            ReceiptDocumentAllocation(
+                invoice_id=invoice.id,
+                invoice_number=invoice.invoice_number,
+                amount=allocation.amount,
+            )
+            for allocation, invoice in allocation_rows
+        ]
+        return ReceiptDocument(
+            receipt_id=receipt.id,
+            receipt_number=receipt.receipt_number,
+            verification_reference=receipt.receipt_number,
+            issued_at=receipt.issued_at,
+            issued_by_membership_id=receipt.issued_by_membership_id,
+            institution_name=setting.institution_name if setting else tenant.display_name,
+            institution_short_name=(setting.short_name if setting else None) or tenant.short_name,
+            primary_color=tenant.primary_color,
+            accent_color=tenant.accent_color,
+            student_id=student_row.Student.id,
+            student_name=student_row.Person.full_name,
+            registration_number=student_row.Student.registration_number,
+            payment_id=payment.id,
+            payment_reference=payment.reference_number,
+            payment_method=payment.method,
+            payment_state=payment.state,
+            paid_on=payment.paid_on,
+            payment_note=payment.note,
+            total_amount=sum((item.amount for item in allocations), ZERO),
+            allocations=allocations,
+        )
 
     def get_reversal(self, source_payment_id: UUID) -> FinancialReversal | None:
         """Return one reversal row for a source payment when it exists."""

@@ -39,6 +39,10 @@ guardian or emergency contact, add an academic-year enrollment with programme/ba
 placement, and perform only allowed lifecycle transitions. The profile displays guardian,
 enrollment, placement, and append-only status history without direct database access.
 
+Student creation, profile detail, lifecycle operations, and printable certificate views use opaque
+workspace screens that replace the Student list while active. This avoids hidden background
+controls and gives mobile forms the full content width.
+
 ## Lifecycle Expansion
 
 Tenant-owned student documents, subject registrations, progressions, transfer/readmission
@@ -54,6 +58,12 @@ or permitted staff scopes can download the content without receiving provider cr
 object keys. Downloads disable browser caching and vary by bearer authorization. The local
 filesystem provider is for development; production object storage and retention execution remain
 release configuration work.
+
+Issued certificate requests now expose a source-derived printable document using the durable
+`issued_reference`, review timestamp, tenant branding, and canonical Student identity. The Student
+portal includes a permission-filtered My records route and shows Print certificate only for issued
+requests; requested and approved records remain non-printable. Linked Student and tenant isolation
+are enforced by the existing service scope boundary.
 
 ## Slice 1 Completion
 
@@ -95,9 +105,13 @@ own-record, linked-student, department, tenant, and cross-tenant boundaries are 
 - Student-own and Guardian-linked reads returned only authorized lifecycle outcomes. Cross-tenant
   Arts/Law records remained isolated under the restricted runtime role.
 - Focused Ruff, Alembic head/drift, production OpenAPI, and frontend build checks pass. The
-  production app exposes 199 paths, and repeated two-tenant demo onboarding remains idempotent.
+  production app exposes 219 paths, and repeated two-tenant demo onboarding remains idempotent.
 - Interactive validation at 390 px reports matching 390 px client and document widths with no
   horizontal overflow.
+- On 17 September 2026, one approved Bonafide request was completed through its normal issuance
+  transition with synthetic reference `CERT-INDUS-2026-0001`. Administrator and linked Student
+  document reads returned `200`; unrelated Student and cross-tenant reads returned `404`; the
+  responsive and print-isolated document rendered through the Student My records page.
 
 ## Slice 2 Validation
 
@@ -106,6 +120,15 @@ administrator Student profile, displayed its pending state and Download action, 
 Student-own and Administrator content access. Cross-tenant media access returns 404. Repeated
 two-tenant demo onboarding preserved the uploaded document. Focused Ruff, Alembic head/drift,
 production OpenAPI, and frontend build checks pass at revision `f8cd51ae2d03` and 207 paths.
+
+## Slice 3 Role Scoping
+
+Department, program, batch, section, and subject-offering scopes now constrain Student list,
+detail, lifecycle, Person selector, and attendance-summary access on the server. HOD and Class
+Advisor portal journeys each returned one assigned active Student and rejected direct access to an
+unassigned Student with 404. Institution-scoped Administrators retain complete tenant visibility.
+The Class Advisor demo seed uses a dedicated active class-enrolled Student so repeated onboarding
+does not rewrite previously validated Student lifecycle history.
 
 ## Acceptance Criteria
 

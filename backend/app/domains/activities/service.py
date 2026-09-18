@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
+from app.domains.academics.models import CollegeSetting
 from app.domains.activities.models import (
     Achievement,
     Activity,
@@ -25,6 +26,7 @@ from app.domains.activities.schemas import (
     ActivityApprovalCreate,
     ActivityApprovalReview,
     ActivityCertificateCreate,
+    ActivityCertificateDocument,
     ActivityClubCreate,
     ActivityCreate,
     ActivityExpenseCreate,
@@ -37,7 +39,8 @@ from app.domains.activities.schemas import (
     EventRegistrationReview,
 )
 from app.domains.audit.models import AuditEvent
-from app.domains.students.models import Student
+from app.domains.students.models import Person, Student
+from app.domains.tenancy.models import Tenant
 from app.security_context import ActorContext, resolve_actor_student_ids
 
 INVALID_ACTIVITY_REFERENCE = "Invalid activity reference"
@@ -684,6 +687,67 @@ class ActivitiesService:
                 ActivityCertificate.serial_number == serial_number,
                 ActivityCertificate.revoked_at.is_(None),
             )
+        )
+
+    def get_certificate_document(
+        self,
+        activity_id: UUID,
+        certificate_id: UUID,
+    ) -> ActivityCertificateDocument | None:
+        """Derive one active participation certificate within actor Student scope."""
+
+        query = select(ActivityCertificate).where(
+            ActivityCertificate.tenant_id == self.actor.tenant_id,
+            ActivityCertificate.id == certificate_id,
+            ActivityCertificate.activity_id == activity_id,
+            ActivityCertificate.revoked_at.is_(None),
+        )
+        student_ids = resolve_actor_student_ids(self.session, self.actor)
+        if student_ids is not None:
+            query = query.where(ActivityCertificate.student_id.in_(student_ids))
+        certificate = self.session.scalar(query)
+        if certificate is None:
+            return None
+        activity = self.session.scalar(
+            select(Activity).where(
+                Activity.tenant_id == self.actor.tenant_id,
+                Activity.id == certificate.activity_id,
+            )
+        )
+        student_row = self.session.execute(
+            select(Student, Person)
+            .join(
+                Person,
+                (Person.tenant_id == Student.tenant_id) & (Person.id == Student.person_id),
+            )
+            .where(
+                Student.tenant_id == self.actor.tenant_id,
+                Student.id == certificate.student_id,
+            )
+        ).one_or_none()
+        tenant = self.session.scalar(select(Tenant).where(Tenant.id == self.actor.tenant_id))
+        setting = self.session.scalar(
+            select(CollegeSetting).where(CollegeSetting.tenant_id == self.actor.tenant_id)
+        )
+        if activity is None or student_row is None or tenant is None:
+            raise ActivitiesValidationError("Certificate source records are unavailable")
+        return ActivityCertificateDocument(
+            certificate_id=certificate.id,
+            serial_number=certificate.serial_number,
+            verification_reference=certificate.serial_number,
+            issued_at=certificate.issued_at,
+            institution_name=setting.institution_name if setting else tenant.display_name,
+            institution_short_name=(setting.short_name if setting else None) or tenant.short_name,
+            primary_color=tenant.primary_color,
+            accent_color=tenant.accent_color,
+            student_id=student_row.Student.id,
+            student_name=student_row.Person.full_name,
+            registration_number=student_row.Student.registration_number,
+            activity_id=activity.id,
+            activity_title=activity.title,
+            activity_type=activity.activity_type,
+            activity_date=activity.activity_date,
+            venue=activity.venue,
         )
 
     def list_points(self, activity_id: UUID, skip: int = 0, limit: int = 100):

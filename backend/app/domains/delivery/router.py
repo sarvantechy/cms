@@ -32,8 +32,11 @@ from app.domains.delivery.schemas import (
     PaginatedClassSessions,
     PaginatedFacultyAllocations,
     PaginatedFacultyProfiles,
+    PaginatedStudentLearningMaterials,
     PaginatedSubjectOfferings,
     PaginatedTimetablePeriods,
+    PaginatedTimetablePublications,
+    StudentLearningMaterialSummary,
     SubjectOfferingCreate,
     SubjectOfferingSummary,
     SubjectOfferingUpdate,
@@ -42,6 +45,10 @@ from app.domains.delivery.schemas import (
     TimetablePeriodCreate,
     TimetablePeriodSummary,
     TimetablePeriodUpdate,
+    TimetablePublicationCreate,
+    TimetablePublicationDetail,
+    TimetablePublicationLineSummary,
+    TimetablePublicationSummary,
 )
 from app.domains.delivery.service import DeliveryDomainError, DeliveryService
 from app.domains.identity.router import require_permission
@@ -372,6 +379,71 @@ def update_timetable_period(
         _raise_conflict(error)
 
 
+@router.get("/timetable-publications", response_model=PaginatedTimetablePublications)
+def list_timetable_publications(
+    service: Annotated[DeliveryService, Depends(get_delivery_service)],
+    skip: PaginationSkip = 0,
+    limit: PaginationLimit = 100,
+) -> PaginatedTimetablePublications:
+    """Return versioned timetable publications visible to the actor."""
+
+    items, total = service.list_timetable_publications(skip=skip, limit=limit)
+    return PaginatedTimetablePublications(
+        items=[TimetablePublicationSummary.model_validate(item) for item in items],
+        total=total,
+    )
+
+
+@router.get(
+    "/timetable-publications/{publication_id}",
+    response_model=TimetablePublicationDetail,
+)
+def get_timetable_publication(
+    publication_id: UUID,
+    service: Annotated[DeliveryService, Depends(get_delivery_service)],
+) -> TimetablePublicationDetail:
+    """Return one visible timetable publication with immutable snapshot lines."""
+
+    result = service.get_timetable_publication(publication_id)
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Timetable publication not found",
+        )
+    publication, lines = result
+    return TimetablePublicationDetail(
+        **TimetablePublicationSummary.model_validate(publication).model_dump(),
+        lines=[TimetablePublicationLineSummary.model_validate(line) for line in lines],
+    )
+
+
+@router.post(
+    "/timetable-publications",
+    response_model=TimetablePublicationDetail,
+    status_code=status.HTTP_201_CREATED,
+)
+def publish_timetable(
+    payload: TimetablePublicationCreate,
+    session: Annotated[Session, Depends(get_runtime_session)],
+    actor: Annotated[ActorContext, Depends(require_permission("timetable.manage"))],
+) -> TimetablePublicationDetail:
+    """Publish a new immutable timetable version for the actor's scope."""
+
+    service = DeliveryService(session, actor)
+    try:
+        publication, lines = service.publish_timetable(payload)
+        response = TimetablePublicationDetail(
+            **TimetablePublicationSummary.model_validate(publication).model_dump(),
+            lines=[TimetablePublicationLineSummary.model_validate(line) for line in lines],
+        )
+        session.commit()
+        return response
+    except DeliveryDomainError as error:
+        _raise_domain_error(error)
+    except IntegrityError as error:
+        _raise_conflict(error)
+
+
 @router.get("/sessions", response_model=PaginatedClassSessions)
 def list_class_sessions(
     service: Annotated[DeliveryService, Depends(get_delivery_service)],
@@ -543,6 +615,36 @@ def list_learning_materials(
 
     items, _ = service.list_learning_materials(limit=200)
     return [LearningMaterialSummary.model_validate(item) for item in items]
+
+
+@router.get("/student-learning-materials", response_model=PaginatedStudentLearningMaterials)
+def list_student_learning_materials(
+    service: Annotated[DeliveryService, Depends(get_delivery_service)],
+    skip: PaginationSkip = 0,
+    limit: PaginationLimit = 100,
+) -> PaginatedStudentLearningMaterials:
+    """Return scoped learning resources with readable course context."""
+
+    rows, total = service.list_student_learning_materials(skip=skip, limit=limit)
+    items = [
+        StudentLearningMaterialSummary(
+            id=row.LearningMaterial.id,
+            offering_id=row.LearningMaterial.offering_id,
+            title=row.LearningMaterial.title,
+            material_type=row.LearningMaterial.material_type,
+            resource_url=row.LearningMaterial.resource_url,
+            description=row.LearningMaterial.description,
+            subject_code=row.subject_code,
+            subject_name=row.subject_name,
+            section_code=row.section_code,
+            section_name=row.section_name,
+            term_code=row.term_code,
+            term_name=row.term_name,
+            faculty_employee_code=row.faculty_employee_code,
+        )
+        for row in rows
+    ]
+    return PaginatedStudentLearningMaterials(items=items, total=total)
 
 
 @router.post("/materials", response_model=LearningMaterialSummary, status_code=status.HTTP_201_CREATED)

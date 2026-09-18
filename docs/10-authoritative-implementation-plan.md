@@ -316,7 +316,9 @@ delivery, college-specific statutory templates, and formal automated coverage re
 5. Add protected, versioned API routes.
 6. Add audit, document, notification, and idempotency behavior where relevant.
 7. Connect the shared frontend API client and typed contracts.
-8. Implement loading, empty, failure, retry, unauthorized, and populated states.
+8. Implement loading, empty, failure, retry, unauthorized, and populated states. Use opaque
+  in-workspace screens for create, edit, detail, and document workflows; do not overlay portal
+  content with popup dialogs.
 9. Add synthetic data for both INDUS colleges.
 10. Update module and implementation-status documentation.
 11. Add unit, API, RLS, permission, and Playwright tests at the end of the slice.
@@ -330,8 +332,8 @@ A module is complete only when business transitions are explicit, database migra
 
 Increments 1 through 10 have local PostgreSQL-backed implementation coverage for their current
 data, services, protected APIs, forced RLS, audit, two-tenant seed, and permission-scoped frontend
-paths. The current Alembic head is `f8cd51ae2d03`, and the production FastAPI application exposes
-207 OpenAPI paths.
+paths. The current Alembic head is `e2b7c4d91a60`, and the production FastAPI application exposes
+219 OpenAPI paths.
 
 Academic Masters covers all 15 current master groups. Admissions, Student, Faculty and Delivery,
 Attendance and Leave, Fees and Payments, Examinations and Results, Communications, role portals,
@@ -395,26 +397,61 @@ can verify them without exposing storage credentials or cross-tenant objects.
 **Gate result:** Passed. Revisions `47a171da8ce2` and `f8cd51ae2d03` add membership-to-Applicant
 binding and shared tenant media with forced RLS and restricted runtime grants. Applicant draft
 editing, validated PDF/JPEG/PNG upload, submission, reload persistence, own-document retrieval,
-staff visibility, Student private uploads, authorization-aware no-store downloads, two-tenant
-isolation, and idempotent seed preservation were exercised through local PostgreSQL and
-interactive Playwright. Focused Ruff, clean Alembic drift at `f8cd51ae2d03`, 207 production OpenAPI
+staff visibility and private-document download, Student private uploads, authorization-aware
+no-store downloads, two-tenant isolation, and idempotent seed preservation were exercised through
+local PostgreSQL and interactive Playwright. The final staff Download control was revalidated on
+16 September 2026. Focused Ruff, clean Alembic drift at `f8cd51ae2d03`, 207 production OpenAPI
 paths, and the frontend production build pass. Production object-storage configuration, retention
 execution, malware scanning, and formal persisted suites remain assigned to later release slices.
 
 ### Slice 3: Academic And Delivery Hardening
 
+**Status:** Complete and locally validated on 17 September 2026.
+
 Add academic-master dependency editing and in-use mutation safeguards, scoped HOD controls, a
 Class Advisor workspace, timetable publication/versioning, and richer Student learning-material
 presentation.
+
+**Current checkpoint:** Every parent-bearing academic master exposes tenant-scoped relationship
+editing. Matching structural, operational, result, and authorization-scope references return 409
+without mutation. Curriculum Subject mappings support Curriculum/Subject changes, and Calendar
+Events support consistent Academic Year/Term changes plus explicit optional-Term clearing.
+Cross-tenant or mismatched parent references return 422. HOD Department and Class Advisor Section
+scopes now constrain Student, Person, Faculty, delivery, timetable, attendance, correction, leave,
+summary, marks, Academic Masters, and notice reads or mutations at the service boundary. The
+section-scoped Advisor portal provides source-backed dashboard, Student, timetable, attendance, and
+read-only delivered-notice journeys. Focused Ruff, frontend build, API denial checks, and
+interactive role journeys pass. Revision `c91e4a7d2b60` adds forced-RLS timetable publication
+metadata and immutable snapshot lines. HOD publication produced versions 1 and 2, superseded the
+prior version, retained both snapshots after a live-period edit, and exposed only the assigned
+Section line to Class Advisor. The Student Learning materials route exposes scoped resources with
+Subject, Section, Term, Faculty, description, type, and link context; an active class Student saw
+one resource while a Student without a current Section saw the explicit empty state.
+
+**Gate result:** Passed. Published versions remained reproducible after mutable period changes,
+in-use academic relationships rejected unsafe reassignment, and HOD, Class Advisor, Faculty, and
+Student records remained constrained to assigned scopes. Formal persisted suites remain assigned
+to Slice 8.
 
 **Gate:** Published timetable versions remain reproducible; in-use academic structures cannot be
 destructively changed; every scoped role sees only assigned academic records.
 
 ### Slice 4: Operational Documents
 
+**Status:** Complete and locally validated on 17 September 2026.
+
 Generate printable receipts, hall tickets, grade cards, transcripts, participation certificates,
 and requested student certificates from authoritative versioned records. Record issuance and
 verification metadata rather than storing hand-maintained document facts.
+
+**Gate result:** Passed. Existing Receipt, ActivityCertificate, and issued StudentCertificateRequest
+records anchor source-derived documents. Revision `e2b7c4d91a60` adds forced-RLS issuance metadata
+for hall tickets, publication-version grade cards, and result-version-manifest transcripts. Issuance
+is replay safe, Student/Guardian reads remain own/linked scoped, and unrelated or cross-tenant
+references are rejected. Focused Ruff, clean Alembic drift, a 219-path production OpenAPI import,
+frontend builds, API matrices, and Controller/Student Playwright journeys pass at desktop, 390px,
+and print media. Legacy aggregate-only results disclose missing subject-level snapshots rather than
+inventing marks.
 
 **Gate:** Every generated document reconciles to its source record, carries tenant branding, and
 cannot reveal unpublished or unauthorized information.
@@ -424,6 +461,24 @@ cannot reveal unpublished or unauthorized information.
 Implement invitation delivery, email/SMS adapters, payment callbacks, communication retries, and
 scheduled report execution through provider-independent durable jobs. Keep callbacks authenticated
 and idempotent and keep secrets outside source code and browser state.
+
+**Execution order:**
+
+1. Define a provider interface and a development recording provider with no external credentials.
+2. Queue invitation email delivery transactionally and stop exposing plaintext invitation tokens
+  through the normal administrator UI once provider delivery is enabled.
+3. Add one bounded worker command for communication and invitation delivery, immutable attempts,
+  retry backoff, stale-job recovery, and operator-visible failure state.
+4. Add provider-specific payment callback adapters with tenant resolution, signature verification,
+  callback idempotency, authoritative amount/currency checks, and links to existing Payment and
+  reconciliation records.
+5. Queue due report schedules, regenerate authorization-scoped CSV exports, deliver them through
+  the same email provider boundary, and retain immutable delivery attempts.
+6. Add worker health, quotas, telemetry, deployment service definitions, and full replay/failure
+  validation before selecting production vendors.
+
+See `docs/modules/19-providers-background-jobs.md` for the detailed data, API, worker, security,
+and validation plan.
 
 **Gate:** Provider failure is visible and safely retryable; duplicate callbacks are harmless; a
 configured report schedule produces an auditable authorized export.

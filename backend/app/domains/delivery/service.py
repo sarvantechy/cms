@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import TypeVar
 from uuid import UUID
 
@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import false, func, or_, select, text
 from sqlalchemy.orm import Session
 
-from app.domains.academics.models import Section, Subject
+from app.domains.academics.models import Batch, Department, Program, Room, Section, Subject, Term
 from app.domains.audit.models import AuditEvent
 from app.domains.delivery.models import (
     ClassSession,
@@ -23,6 +23,8 @@ from app.domains.delivery.models import (
     SubjectOffering,
     SyllabusProgress,
     TimetablePeriod,
+    TimetablePublication,
+    TimetablePublicationLine,
 )
 from app.domains.delivery.schemas import (
     ClassSessionCreate,
@@ -41,12 +43,14 @@ from app.domains.delivery.schemas import (
     SyllabusProgressCreate,
     TimetablePeriodCreate,
     TimetablePeriodUpdate,
+    TimetablePublicationCreate,
 )
 from app.domains.students.models import Person, StudentEnrollment
 from app.security_context import ActorContext, resolve_actor_student_ids
 
 ModelType = TypeVar("ModelType")
 INVALID_SUBJECT_OFFERING = "Invalid subject offering reference"
+INVALID_FACULTY_REFERENCE = "Invalid faculty reference"
 
 
 class DeliveryDomainError(Exception):
@@ -239,6 +243,132 @@ class DeliveryService:
 
         return query.where(or_(*conditions)) if conditions else query.where(false())
 
+    def _scoped_faculty_ids(self):
+        """Select faculty visible through scoped offerings or department postings."""
+
+        query = select(FacultyProfile.id).where(
+            FacultyProfile.tenant_id == self.actor.tenant_id
+        )
+        if self.actor.scopes_of_type("institution"):
+            return query
+
+        conditions = [
+            FacultyProfile.id.in_(
+                select(FacultyAllocation.faculty_id).where(
+                    FacultyAllocation.tenant_id == self.actor.tenant_id,
+                    FacultyAllocation.offering_id.in_(self._scoped_offering_ids()),
+                )
+            )
+        ]
+        department_ids = tuple(
+            scope.scope_reference_id
+            for scope in self.actor.scopes_of_type("department")
+            if scope.scope_reference_id is not None
+        )
+        if department_ids:
+            conditions.append(
+                FacultyProfile.id.in_(
+                    select(DepartmentPosting.faculty_id).where(
+                        DepartmentPosting.tenant_id == self.actor.tenant_id,
+                        DepartmentPosting.department_id.in_(department_ids),
+                    )
+                )
+            )
+        return query.where(or_(*conditions))
+
+    def _publication_scope(self) -> tuple[str, UUID | None]:
+        """Resolve the single publication boundary authorized for this actor."""
+
+        if self.actor.scopes_of_type("institution"):
+            return "institution", None
+        department_ids = tuple(
+            scope.scope_reference_id
+            for scope in self.actor.scopes_of_type("department")
+            if scope.scope_reference_id is not None
+        )
+        if len(department_ids) != 1:
+            raise DeliveryValidationError(
+                "Timetable publication requires institution scope or one Department scope"
+            )
+        return "department", department_ids[0]
+
+    def _visible_publication_ids(self):
+        """Select publications containing timetable lines visible to the actor."""
+
+        query = select(TimetablePublication.id).where(
+            TimetablePublication.tenant_id == self.actor.tenant_id
+        )
+        if self.actor.scopes_of_type("institution"):
+            return query
+        return query.where(
+            TimetablePublication.id.in_(
+                select(TimetablePublicationLine.publication_id).where(
+                    TimetablePublicationLine.tenant_id == self.actor.tenant_id,
+                    TimetablePublicationLine.offering_id.in_(self._scoped_offering_ids()),
+                )
+            )
+        )
+
+    def _can_create_offering(self, subject_id: UUID, section_id: UUID) -> bool:
+        """Return whether actor scopes authorize a proposed subject offering."""
+
+        if self.actor.scopes_of_type("institution"):
+            return True
+        department_ids = tuple(
+            scope.scope_reference_id
+            for scope in self.actor.scopes_of_type("department")
+            if scope.scope_reference_id is not None
+        )
+        if department_ids and self.session.scalar(
+            select(Subject.id).where(
+                Subject.tenant_id == self.actor.tenant_id,
+                Subject.id == subject_id,
+                Subject.department_id.in_(department_ids),
+            )
+        ):
+            return bool(
+                self.session.scalar(
+                    select(Section.id)
+                    .join(
+                        Batch,
+                        (Batch.tenant_id == Section.tenant_id)
+                        & (Batch.id == Section.batch_id),
+                    )
+                    .join(
+                        Program,
+                        (Program.tenant_id == Batch.tenant_id)
+                        & (Program.id == Batch.program_id),
+                    )
+                    .where(
+                        Section.tenant_id == self.actor.tenant_id,
+                        Section.id == section_id,
+                        Program.department_id.in_(department_ids),
+                    )
+                )
+            )
+        section_ids = tuple(
+            scope.scope_reference_id
+            for scope in self.actor.scopes_of_type("section")
+            if scope.scope_reference_id is not None
+        )
+        if section_id in section_ids:
+            return True
+        batch_ids = tuple(
+            scope.scope_reference_id
+            for scope in self.actor.scopes_of_type("batch")
+            if scope.scope_reference_id is not None
+        )
+        return bool(
+            batch_ids
+            and self.session.scalar(
+                select(Section.id).where(
+                    Section.tenant_id == self.actor.tenant_id,
+                    Section.id == section_id,
+                    Section.batch_id.in_(batch_ids),
+                )
+            )
+        )
+
     def _list_operations(self, model: type[ModelType], skip: int, limit: int):
         """List one tenant-owned delivery operation model in reverse creation order."""
 
@@ -265,11 +395,14 @@ class DeliveryService:
         return item
 
     def list_faculty_profiles(self, skip: int = 0, limit: int = 100):
-        """List faculty profiles for the current tenant."""
+        """List faculty profiles visible through the actor's resolved scopes."""
 
         query = (
             select(FacultyProfile)
-            .where(FacultyProfile.tenant_id == self.actor.tenant_id)
+            .where(
+                FacultyProfile.tenant_id == self.actor.tenant_id,
+                FacultyProfile.id.in_(self._scoped_faculty_ids()),
+            )
             .order_by(FacultyProfile.employee_code)
         )
         return self._paginate(query, skip, limit)
@@ -281,12 +414,17 @@ class DeliveryService:
             select(FacultyProfile).where(
                 FacultyProfile.tenant_id == self.actor.tenant_id,
                 FacultyProfile.id == faculty_id,
+                FacultyProfile.id.in_(self._scoped_faculty_ids()),
             )
         )
 
     def create_faculty_profile(self, payload: FacultyProfileCreate) -> FacultyProfile:
         """Create one faculty profile after validating referenced person identity."""
 
+        if not self.actor.scopes_of_type("institution"):
+            raise DeliveryValidationError(
+                "Faculty profiles can only be created with institution scope"
+            )
         self._require_entity(Person, payload.person_id, "person_id")
         faculty = FacultyProfile(
             tenant_id=self.actor.tenant_id,
@@ -344,6 +482,11 @@ class DeliveryService:
     def create_subject_offering(self, payload: SubjectOfferingCreate) -> SubjectOffering:
         """Create one subject offering after validating academic references."""
 
+        self._require_entity(Subject, payload.subject_id, "subject_id")
+        self._require_entity(Section, payload.section_id, "section_id")
+        self._require_entity(Term, payload.term_id, "term_id")
+        if not self._can_create_offering(payload.subject_id, payload.section_id):
+            raise DeliveryValidationError(INVALID_SUBJECT_OFFERING)
         offering = SubjectOffering(
             tenant_id=self.actor.tenant_id,
             term_id=payload.term_id,
@@ -405,6 +548,10 @@ class DeliveryService:
     def create_faculty_allocation(self, payload: FacultyAllocationCreate) -> FacultyAllocation:
         """Create one faculty allocation."""
 
+        if self.get_subject_offering(payload.offering_id) is None:
+            raise DeliveryValidationError(INVALID_SUBJECT_OFFERING)
+        if self.get_faculty_profile(payload.faculty_id) is None:
+            raise DeliveryValidationError(INVALID_FACULTY_REFERENCE)
         allocation = FacultyAllocation(
             tenant_id=self.actor.tenant_id,
             offering_id=payload.offering_id,
@@ -470,6 +617,10 @@ class DeliveryService:
     def create_timetable_period(self, payload: TimetablePeriodCreate) -> TimetablePeriod:
         """Create one timetable period after enforcing faculty and room conflict rules."""
 
+        if self.get_subject_offering(payload.offering_id) is None:
+            raise DeliveryValidationError(INVALID_SUBJECT_OFFERING)
+        if self.get_faculty_profile(payload.faculty_id) is None:
+            raise DeliveryValidationError(INVALID_FACULTY_REFERENCE)
         self._validate_timetable_conflicts(
             period_id=None,
             faculty_id=payload.faculty_id,
@@ -515,6 +666,10 @@ class DeliveryService:
         next_day_of_week = payload.day_of_week or period.day_of_week
         next_start_time = payload.start_time or period.start_time
         next_end_time = payload.end_time or period.end_time
+        if self.get_subject_offering(next_offering_id) is None:
+            raise DeliveryValidationError(INVALID_SUBJECT_OFFERING)
+        if self.get_faculty_profile(next_faculty_id) is None:
+            raise DeliveryValidationError(INVALID_FACULTY_REFERENCE)
         if next_start_time >= next_end_time:
             raise DeliveryValidationError("end_time must be after start_time")
 
@@ -558,6 +713,193 @@ class DeliveryService:
             self._audit("delivery.timetable.update", "timetable_period", period.id, changes)
         return period
 
+    def list_timetable_publications(self, skip: int = 0, limit: int = 100):
+        """List versioned timetable publications visible through actor scope."""
+
+        query = (
+            select(TimetablePublication)
+            .where(
+                TimetablePublication.tenant_id == self.actor.tenant_id,
+                TimetablePublication.id.in_(self._visible_publication_ids()),
+            )
+            .order_by(
+                TimetablePublication.published_at.desc(),
+                TimetablePublication.version.desc(),
+            )
+        )
+        return self._paginate(query, skip, limit)
+
+    def get_timetable_publication(
+        self, publication_id: UUID
+    ) -> tuple[TimetablePublication, list[TimetablePublicationLine]] | None:
+        """Return one visible publication with immutable lines limited to actor scope."""
+
+        publication = self.session.scalar(
+            select(TimetablePublication).where(
+                TimetablePublication.tenant_id == self.actor.tenant_id,
+                TimetablePublication.id == publication_id,
+                TimetablePublication.id.in_(self._visible_publication_ids()),
+            )
+        )
+        if publication is None:
+            return None
+        line_query = select(TimetablePublicationLine).where(
+            TimetablePublicationLine.tenant_id == self.actor.tenant_id,
+            TimetablePublicationLine.publication_id == publication.id,
+        )
+        if not self.actor.scopes_of_type("institution"):
+            line_query = line_query.where(
+                TimetablePublicationLine.offering_id.in_(self._scoped_offering_ids())
+            )
+        lines = list(
+            self.session.scalars(
+                line_query.order_by(
+                    TimetablePublicationLine.day_of_week,
+                    TimetablePublicationLine.start_time,
+                    TimetablePublicationLine.section_code,
+                )
+            )
+        )
+        return publication, lines
+
+    def publish_timetable(
+        self, payload: TimetablePublicationCreate
+    ) -> tuple[TimetablePublication, list[TimetablePublicationLine]]:
+        """Snapshot active scoped timetable periods into one immutable publication version."""
+
+        self._require_entity(Term, payload.term_id, "term_id")
+        scope_type, scope_reference_id = self._publication_scope()
+        rows = list(
+            self.session.execute(
+                select(
+                    TimetablePeriod,
+                    SubjectOffering,
+                    Subject,
+                    Section,
+                    FacultyProfile,
+                    Room,
+                )
+                .join(
+                    SubjectOffering,
+                    (SubjectOffering.tenant_id == TimetablePeriod.tenant_id)
+                    & (SubjectOffering.id == TimetablePeriod.offering_id),
+                )
+                .join(
+                    Subject,
+                    (Subject.tenant_id == SubjectOffering.tenant_id)
+                    & (Subject.id == SubjectOffering.subject_id),
+                )
+                .join(
+                    Section,
+                    (Section.tenant_id == SubjectOffering.tenant_id)
+                    & (Section.id == SubjectOffering.section_id),
+                )
+                .join(
+                    FacultyProfile,
+                    (FacultyProfile.tenant_id == TimetablePeriod.tenant_id)
+                    & (FacultyProfile.id == TimetablePeriod.faculty_id),
+                )
+                .outerjoin(
+                    Room,
+                    (Room.tenant_id == TimetablePeriod.tenant_id)
+                    & (Room.id == TimetablePeriod.room_id),
+                )
+                .where(
+                    TimetablePeriod.tenant_id == self.actor.tenant_id,
+                    TimetablePeriod.status == "active",
+                    TimetablePeriod.offering_id.in_(self._scoped_offering_ids()),
+                    SubjectOffering.term_id == payload.term_id,
+                    SubjectOffering.status.in_(("planned", "active")),
+                )
+                .order_by(
+                    TimetablePeriod.day_of_week,
+                    TimetablePeriod.start_time,
+                    Section.code,
+                )
+            )
+        )
+        if not rows:
+            raise DeliveryValidationError(
+                "No active scoped timetable periods are available for this term"
+            )
+
+        publication_query = select(TimetablePublication).where(
+            TimetablePublication.tenant_id == self.actor.tenant_id,
+            TimetablePublication.term_id == payload.term_id,
+            TimetablePublication.scope_type == scope_type,
+        )
+        publication_query = (
+            publication_query.where(TimetablePublication.scope_reference_id.is_(None))
+            if scope_reference_id is None
+            else publication_query.where(
+                TimetablePublication.scope_reference_id == scope_reference_id
+            )
+        )
+        previous = list(
+            self.session.scalars(
+                publication_query.order_by(TimetablePublication.version).with_for_update()
+            )
+        )
+        version = max((item.version for item in previous), default=0) + 1
+        for item in previous:
+            if item.state == "published":
+                item.state = "superseded"
+
+        publication = TimetablePublication(
+            tenant_id=self.actor.tenant_id,
+            term_id=payload.term_id,
+            scope_type=scope_type,
+            scope_reference_id=scope_reference_id,
+            version=version,
+            state="published",
+            note=payload.note,
+            published_by_membership_id=self.actor.membership_id,
+            published_at=datetime.now(UTC),
+        )
+        self.session.add(publication)
+        self.session.flush()
+
+        lines = []
+        for period, offering, subject, section, faculty, room in rows:
+            line = TimetablePublicationLine(
+                tenant_id=self.actor.tenant_id,
+                publication_id=publication.id,
+                source_period_id=period.id,
+                offering_id=offering.id,
+                subject_id=subject.id,
+                section_id=section.id,
+                faculty_id=faculty.id,
+                room_id=room.id if room is not None else None,
+                subject_code=subject.code,
+                subject_name=subject.name,
+                section_code=section.code,
+                section_name=section.display_name,
+                faculty_employee_code=faculty.employee_code,
+                room_code=room.code if room is not None else None,
+                room_name=room.name if room is not None else None,
+                day_of_week=period.day_of_week,
+                start_time=period.start_time,
+                end_time=period.end_time,
+            )
+            self.session.add(line)
+            lines.append(line)
+        self.session.flush()
+        self._audit(
+            "delivery.timetable.publish",
+            "timetable_publication",
+            publication.id,
+            {
+                "term_id": str(payload.term_id),
+                "scope_type": scope_type,
+                "scope_reference_id": (
+                    str(scope_reference_id) if scope_reference_id is not None else None
+                ),
+                "version": version,
+                "line_count": len(lines),
+            },
+        )
+        return publication, lines
+
     def list_class_sessions(self, skip: int = 0, limit: int = 100, period_id: UUID | None = None):
         """List class sessions with optional period filter."""
 
@@ -593,6 +935,8 @@ class DeliveryService:
     def create_class_session(self, payload: ClassSessionCreate) -> ClassSession:
         """Create one class session from a period and date."""
 
+        if self.get_timetable_period(payload.period_id) is None:
+            raise DeliveryValidationError("Invalid timetable period reference")
         class_session = ClassSession(
             tenant_id=self.actor.tenant_id,
             period_id=payload.period_id,
@@ -635,6 +979,7 @@ class DeliveryService:
                 select(TimetablePeriod).where(
                     TimetablePeriod.tenant_id == self.actor.tenant_id,
                     TimetablePeriod.status == "active",
+                    TimetablePeriod.offering_id.in_(self._scoped_offering_ids()),
                 )
             )
         )
@@ -681,13 +1026,37 @@ class DeliveryService:
         return len(created_ids), created_ids
 
     def list_department_postings(self, skip: int = 0, limit: int = 100):
-        """List effective-dated faculty department postings."""
+        """List effective-dated faculty postings visible in the actor's scope."""
 
-        return self._list_operations(DepartmentPosting, skip, limit)
+        query = select(DepartmentPosting).where(
+            DepartmentPosting.tenant_id == self.actor.tenant_id
+        )
+        if not self.actor.scopes_of_type("institution"):
+            department_ids = tuple(
+                scope.scope_reference_id
+                for scope in self.actor.scopes_of_type("department")
+                if scope.scope_reference_id is not None
+            )
+            query = (
+                query.where(DepartmentPosting.department_id.in_(department_ids))
+                if department_ids
+                else query.where(false())
+            )
+        return self._paginate(query.order_by(DepartmentPosting.created_at.desc()), skip, limit)
 
     def create_department_posting(self, payload: DepartmentPostingCreate) -> DepartmentPosting:
         """Create and audit one effective-dated faculty department posting."""
 
+        self._require_entity(Department, payload.department_id, "department_id")
+        department_ids = {
+            scope.scope_reference_id
+            for scope in self.actor.scopes_of_type("department")
+            if scope.scope_reference_id is not None
+        }
+        if not self.actor.scopes_of_type("institution") and payload.department_id not in department_ids:
+            raise DeliveryValidationError("Invalid department reference")
+        if self.get_faculty_profile(payload.faculty_id) is None:
+            raise DeliveryValidationError(INVALID_FACULTY_REFERENCE)
         return self._create_operation(DepartmentPosting, payload, "delivery.posting.create", "department_posting")
 
     def list_substitutions(self, skip: int = 0, limit: int = 100):
@@ -717,6 +1086,8 @@ class DeliveryService:
 
         if self.get_class_session(payload.session_id) is None:
             raise DeliveryValidationError("Invalid class session reference")
+        if self.get_faculty_profile(payload.substitute_faculty_id) is None:
+            raise DeliveryValidationError("Invalid substitute faculty reference")
         return self._create_operation(ClassSubstitution, payload, "delivery.substitution.create", "class_substitution")
 
     def list_lesson_plans(self, skip: int = 0, limit: int = 100):
@@ -751,6 +1122,65 @@ class DeliveryService:
             .order_by(LearningMaterial.created_at.desc())
         )
         return self._paginate(query, skip, limit)
+
+    def list_student_learning_materials(self, skip: int = 0, limit: int = 100):
+        """List scoped learning materials with readable academic and Faculty context."""
+
+        faculty_code = (
+            select(FacultyProfile.employee_code)
+            .join(
+                FacultyAllocation,
+                (FacultyAllocation.tenant_id == FacultyProfile.tenant_id)
+                & (FacultyAllocation.faculty_id == FacultyProfile.id),
+            )
+            .where(
+                FacultyAllocation.tenant_id == self.actor.tenant_id,
+                FacultyAllocation.offering_id == LearningMaterial.offering_id,
+                FacultyAllocation.status == "active",
+            )
+            .order_by(FacultyProfile.employee_code)
+            .limit(1)
+            .scalar_subquery()
+        )
+        query = (
+            select(
+                LearningMaterial,
+                Subject.code.label("subject_code"),
+                Subject.name.label("subject_name"),
+                Section.code.label("section_code"),
+                Section.display_name.label("section_name"),
+                Term.code.label("term_code"),
+                Term.display_name.label("term_name"),
+                faculty_code.label("faculty_employee_code"),
+            )
+            .join(
+                SubjectOffering,
+                (SubjectOffering.tenant_id == LearningMaterial.tenant_id)
+                & (SubjectOffering.id == LearningMaterial.offering_id),
+            )
+            .join(
+                Subject,
+                (Subject.tenant_id == SubjectOffering.tenant_id)
+                & (Subject.id == SubjectOffering.subject_id),
+            )
+            .join(
+                Section,
+                (Section.tenant_id == SubjectOffering.tenant_id)
+                & (Section.id == SubjectOffering.section_id),
+            )
+            .join(
+                Term,
+                (Term.tenant_id == SubjectOffering.tenant_id)
+                & (Term.id == SubjectOffering.term_id),
+            )
+            .where(
+                LearningMaterial.tenant_id == self.actor.tenant_id,
+                LearningMaterial.offering_id.in_(self._scoped_offering_ids()),
+            )
+            .order_by(Subject.name, LearningMaterial.created_at.desc())
+        )
+        total = self.session.scalar(select(func.count()).select_from(query.subquery())) or 0
+        return list(self.session.execute(query.offset(skip).limit(limit))), total
 
     def create_learning_material(self, payload: LearningMaterialCreate) -> LearningMaterial:
         """Create and audit one offering learning-resource reference."""

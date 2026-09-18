@@ -6,11 +6,10 @@ html { scroll-behavior: smooth; }
 body { margin: 0; min-width: 320px; min-height: 100vh; }
 button, input, select { font: inherit; }
 button, a, select { -webkit-tap-highlight-color: transparent; }
-.modal-backdrop { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 20px; background: rgba(13, 24, 32, .62); }
-.modal-panel { width: min(560px, 100%); max-height: calc(100vh - 40px); overflow: auto; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 24px 70px rgba(0, 0, 0, .24); }
-.modal-panel > header { display: flex; align-items: center; justify-content: space-between; padding: 22px 24px; border-bottom: 1px solid var(--line); }
-.modal-panel > header p { margin: 0 0 4px; color: var(--tenant-accent); font-size: 9px; font-weight: 800; letter-spacing: .12em; }
-.modal-panel > header h2 { margin: 0; font-size: 20px; }
+.workspace-panel { width: 100%; max-height: none; overflow: visible; background: var(--portal-paper); border: 1px solid var(--line); box-shadow: 0 12px 34px rgba(24, 44, 63, .08); }
+.workspace-panel > header { display: flex; align-items: center; justify-content: space-between; padding: 22px 24px; border-bottom: 1px solid var(--line); }
+.workspace-panel > header p { margin: 0 0 4px; color: var(--tenant-accent); font-size: 9px; font-weight: 800; letter-spacing: .12em; }
+.workspace-panel > header h2 { margin: 0; font-size: 20px; }
 .master-form { display: grid; gap: 16px; padding: 24px; }
 .master-form label { display: grid; gap: 7px; color: var(--text-secondary); font-size: 10px; font-weight: 700; text-transform: uppercase; }
 .master-form input, .master-form select { width: 100%; height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 0; outline: none; color: var(--text-primary); background: var(--panel); font-size: 12px; text-transform: none; }
@@ -19,7 +18,7 @@ button, a, select { -webkit-tap-highlight-color: transparent; }
 .master-form footer { display: flex; justify-content: flex-end; gap: 10px; padding-top: 8px; }
 .master-form footer button { min-height: 40px; padding: 0 16px; }
 .form-error { margin: 0; color: var(--status-error); font-size: 11px; }
-@media (max-width: 520px) { .form-grid { grid-template-columns: 1fr; } .modal-backdrop { padding: 10px; } .modal-panel { max-height: calc(100vh - 20px); } }
+@media (max-width: 520px) { .form-grid { grid-template-columns: 1fr; } .workspace-panel { max-height: none; } }
 button { cursor: pointer; }
 a { color: inherit; }
 img { display: block; max-width: 100%; }

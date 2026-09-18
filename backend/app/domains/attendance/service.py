@@ -5,9 +5,10 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import case, func, select, text
+from sqlalchemy import case, false, func, or_, select, text
 from sqlalchemy.orm import Session
 
+from app.domains.academics.models import Section, Subject
 from app.domains.attendance.models import AttendanceCorrection, AttendanceRecord, LeaveRequest
 from app.domains.attendance.schemas import (
     AttendanceCorrectionCreate,
@@ -20,10 +21,12 @@ from app.domains.attendance.schemas import (
     LeaveRequestUpdate,
 )
 from app.domains.audit.models import AuditEvent
-from app.domains.delivery.models import ClassSession
+from app.domains.delivery.models import ClassSession, SubjectOffering, TimetablePeriod
+from app.domains.students.service import StudentsService
 from app.security_context import ActorContext, resolve_actor_student_ids
 
 DEFAULT_ATTENDANCE_THRESHOLD_PERCENTAGE = 75.0
+INVALID_SESSION_REFERENCE = "Invalid session_id reference"
 
 
 class AttendanceDomainError(Exception):
@@ -95,13 +98,112 @@ class AttendanceService:
         items = list(self.session.scalars(query.offset(skip).limit(limit)))
         return items, total
 
+    def _scoped_session_ids(self):
+        """Select class sessions visible through the actor's academic scopes."""
+
+        query = select(ClassSession.id).where(ClassSession.tenant_id == self.actor.tenant_id)
+        if self.actor.scopes_of_type("institution"):
+            return query
+
+        offering_conditions = []
+        offering_ids = tuple(
+            scope.scope_reference_id
+            for scope in self.actor.scopes_of_type("subject_offering")
+            if scope.scope_reference_id is not None
+        )
+        if offering_ids:
+            offering_conditions.append(SubjectOffering.id.in_(offering_ids))
+        department_ids = tuple(
+            scope.scope_reference_id
+            for scope in self.actor.scopes_of_type("department")
+            if scope.scope_reference_id is not None
+        )
+        if department_ids:
+            offering_conditions.append(
+                SubjectOffering.subject_id.in_(
+                    select(Subject.id).where(
+                        Subject.tenant_id == self.actor.tenant_id,
+                        Subject.department_id.in_(department_ids),
+                    )
+                )
+            )
+        section_ids = tuple(
+            scope.scope_reference_id
+            for scope in self.actor.scopes_of_type("section")
+            if scope.scope_reference_id is not None
+        )
+        if section_ids:
+            offering_conditions.append(SubjectOffering.section_id.in_(section_ids))
+        batch_ids = tuple(
+            scope.scope_reference_id
+            for scope in self.actor.scopes_of_type("batch")
+            if scope.scope_reference_id is not None
+        )
+        if batch_ids:
+            offering_conditions.append(
+                SubjectOffering.section_id.in_(
+                    select(Section.id).where(
+                        Section.tenant_id == self.actor.tenant_id,
+                        Section.batch_id.in_(batch_ids),
+                    )
+                )
+            )
+        if not offering_conditions:
+            return query.where(false())
+        scoped_offering_ids = select(SubjectOffering.id).where(
+            SubjectOffering.tenant_id == self.actor.tenant_id,
+            or_(*offering_conditions),
+        )
+        return query.where(
+            ClassSession.period_id.in_(
+                select(TimetablePeriod.id).where(
+                    TimetablePeriod.tenant_id == self.actor.tenant_id,
+                    TimetablePeriod.offering_id.in_(scoped_offering_ids),
+                )
+            )
+        )
+
+    def _scoped_record_ids(self):
+        """Select attendance records visible to the authenticated actor."""
+
+        query = select(AttendanceRecord.id).where(
+            AttendanceRecord.tenant_id == self.actor.tenant_id
+        )
+        if self.actor.scopes_of_type("institution"):
+            return query
+        student_ids = resolve_actor_student_ids(self.session, self.actor)
+        if student_ids is not None:
+            return query.where(AttendanceRecord.student_id.in_(student_ids))
+        return query.where(
+            AttendanceRecord.session_id.in_(self._scoped_session_ids()),
+            AttendanceRecord.student_id.in_(
+                StudentsService(self.session, self.actor).scoped_student_ids_query()
+            ),
+        )
+
+    def _get_scoped_session(self, session_id: UUID) -> ClassSession | None:
+        """Return one class session only when it is visible through actor scope."""
+
+        return self.session.scalar(
+            select(ClassSession).where(
+                ClassSession.tenant_id == self.actor.tenant_id,
+                ClassSession.id == session_id,
+                ClassSession.id.in_(self._scoped_session_ids()),
+            )
+        )
+
+    def _student_is_visible(self, student_id: UUID) -> bool:
+        """Return whether the Student domain grants this actor access to one student."""
+
+        return StudentsService(self.session, self.actor).get_student(student_id) is not None
+
     def list_records(self, skip: int = 0, limit: int = 100, session_id: UUID | None = None):
         """List attendance records with optional class session filter."""
 
-        query = select(AttendanceRecord).where(AttendanceRecord.tenant_id == self.actor.tenant_id)
-        student_ids = resolve_actor_student_ids(self.session, self.actor)
-        if student_ids is not None:
-            query = query.where(AttendanceRecord.student_id.in_(student_ids))
+        query = select(AttendanceRecord).where(
+            AttendanceRecord.tenant_id == self.actor.tenant_id,
+            AttendanceRecord.id.in_(self._scoped_record_ids()),
+        )
         if session_id is not None:
             query = query.where(AttendanceRecord.session_id == session_id)
         query = query.order_by(AttendanceRecord.created_at.desc())
@@ -113,23 +215,18 @@ class AttendanceService:
         query = select(AttendanceRecord).where(
                 AttendanceRecord.tenant_id == self.actor.tenant_id,
                 AttendanceRecord.id == record_id,
+                AttendanceRecord.id.in_(self._scoped_record_ids()),
             )
-        student_ids = resolve_actor_student_ids(self.session, self.actor)
-        if student_ids is not None:
-            query = query.where(AttendanceRecord.student_id.in_(student_ids))
         return self.session.scalar(query)
 
     def create_record(self, payload: AttendanceRecordCreate) -> AttendanceRecord:
         """Create one attendance record for one session and student pair."""
 
-        session_row = self.session.scalar(
-            select(ClassSession).where(
-                ClassSession.tenant_id == self.actor.tenant_id,
-                ClassSession.id == payload.session_id,
-            )
-        )
+        session_row = self._get_scoped_session(payload.session_id)
         if session_row is None:
-            raise AttendanceValidationError("Invalid session_id reference")
+            raise AttendanceValidationError(INVALID_SESSION_REFERENCE)
+        if not self._student_is_visible(payload.student_id):
+            raise AttendanceValidationError("Invalid student_id reference")
         if session_row.state == "locked":
             raise AttendanceConflictError("Attendance is locked for this session")
 
@@ -180,14 +277,9 @@ class AttendanceService:
     def submit_attendance(self, payload: AttendanceSubmitRequest) -> int:
         """Upsert submitted attendance records for one class session."""
 
-        session_row = self.session.scalar(
-            select(ClassSession).where(
-                ClassSession.tenant_id == self.actor.tenant_id,
-                ClassSession.id == payload.session_id,
-            )
-        )
+        session_row = self._get_scoped_session(payload.session_id)
         if session_row is None:
-            raise AttendanceValidationError("Invalid session_id reference")
+            raise AttendanceValidationError(INVALID_SESSION_REFERENCE)
         if session_row.state == "locked":
             raise AttendanceConflictError("Attendance is locked for this session")
 
@@ -195,6 +287,8 @@ class AttendanceService:
         for requested in payload.records:
             if requested.session_id != payload.session_id:
                 raise AttendanceValidationError("All records must target payload session_id")
+            if not self._student_is_visible(requested.student_id):
+                raise AttendanceValidationError("Invalid student_id reference")
             existing = self.session.scalar(
                 select(AttendanceRecord).where(
                     AttendanceRecord.tenant_id == self.actor.tenant_id,
@@ -232,14 +326,9 @@ class AttendanceService:
     def lock_session_attendance(self, session_id: UUID) -> int:
         """Lock all submitted attendance records for one class session."""
 
-        session_row = self.session.scalar(
-            select(ClassSession).where(
-                ClassSession.tenant_id == self.actor.tenant_id,
-                ClassSession.id == session_id,
-            )
-        )
+        session_row = self._get_scoped_session(session_id)
         if session_row is None:
-            raise AttendanceValidationError("Invalid session_id reference")
+            raise AttendanceValidationError(INVALID_SESSION_REFERENCE)
         if session_row.state == "locked":
             return 0
 
@@ -268,7 +357,10 @@ class AttendanceService:
 
         query = (
             select(AttendanceCorrection)
-            .where(AttendanceCorrection.tenant_id == self.actor.tenant_id)
+            .where(
+                AttendanceCorrection.tenant_id == self.actor.tenant_id,
+                AttendanceCorrection.record_id.in_(self._scoped_record_ids()),
+            )
             .order_by(AttendanceCorrection.created_at.desc())
         )
         return self._paginate(query, skip, limit)
@@ -280,6 +372,7 @@ class AttendanceService:
             select(AttendanceCorrection).where(
                 AttendanceCorrection.tenant_id == self.actor.tenant_id,
                 AttendanceCorrection.id == correction_id,
+                AttendanceCorrection.record_id.in_(self._scoped_record_ids()),
             )
         )
 
@@ -353,7 +446,12 @@ class AttendanceService:
 
         query = (
             select(LeaveRequest)
-            .where(LeaveRequest.tenant_id == self.actor.tenant_id)
+            .where(
+                LeaveRequest.tenant_id == self.actor.tenant_id,
+                LeaveRequest.person_id.in_(
+                    StudentsService(self.session, self.actor).scoped_person_ids_query()
+                ),
+            )
             .order_by(LeaveRequest.created_at.desc())
         )
         return self._paginate(query, skip, limit)
@@ -365,6 +463,9 @@ class AttendanceService:
             select(LeaveRequest).where(
                 LeaveRequest.tenant_id == self.actor.tenant_id,
                 LeaveRequest.id == leave_id,
+                LeaveRequest.person_id.in_(
+                    StudentsService(self.session, self.actor).scoped_person_ids_query()
+                ),
             )
         )
 
@@ -447,6 +548,8 @@ class AttendanceService:
     def attendance_summary(self, student_id: UUID) -> dict[str, bool | int | float | UUID]:
         """Compute attendance summary from submitted and locked sessions only."""
 
+        if not self._student_is_visible(student_id):
+            raise AttendanceDomainError("Student not found", 404)
         result = self.session.execute(
             select(
                 func.count(AttendanceRecord.id).label("eligible_sessions"),

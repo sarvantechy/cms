@@ -198,6 +198,11 @@ Each domain should contain its API routes, request/response schemas, service rul
 
 ## Reliability and Operations
 
+The current AWS target is a synthetic stakeholder demo, not a production environment. Its proposed
+topology, deployment gates, isolation rules, backup/rollback sequence, and explicit limitations are
+defined in `docs/12-aws-demo-deployment-plan.md`. Existing frontend-only deployment assets must not
+be treated as a full-stack release process.
+
 - Use database migrations as the only production schema-change mechanism.
 - Back up the database and object storage and regularly test restoration.
 - Use structured logs with request, tenant, and actor identifiers without logging secrets.

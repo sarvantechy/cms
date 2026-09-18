@@ -1,5 +1,5 @@
 import { AxiosError } from "axios";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   createAcademicEntity,
   getAcademicsOverview,
@@ -9,6 +9,7 @@ import {
   type AcademicEntitySummaryMap,
   type AcademicsOverview,
 } from "./academicApi";
+import { getCurrentActor } from "./operationalApi";
 import "./AcademicMasters.css";
 
 /** Represent one generic record returned by the academics APIs. */
@@ -176,6 +177,7 @@ const ENTITY_DEFINITIONS: EntityDefinition[] = [
       },
     ],
     updateFields: [
+      { name: "academic_year_id", label: "Academic Year", kind: "select", required: true, sourceEntity: "academicYears" },
       { name: "display_name", label: "Display Name", kind: "text" },
       { name: "starts_on", label: "Starts On", kind: "date" },
       { name: "ends_on", label: "Ends On", kind: "date" },
@@ -218,6 +220,7 @@ const ENTITY_DEFINITIONS: EntityDefinition[] = [
       { name: "status", label: "Status", kind: "select", required: true, options: [{ value: "active", label: "Active" }, { value: "inactive", label: "Inactive" }, { value: "discontinued", label: "Discontinued" }] },
     ],
     updateFields: [
+      { name: "department_id", label: "Department", kind: "select", required: true, sourceEntity: "departments" },
       { name: "name", label: "Name", kind: "text" },
       { name: "degree_level", label: "Degree Level", kind: "text" },
       { name: "duration_years", label: "Duration Years", kind: "number", min: 1, max: 10, step: 1 },
@@ -241,6 +244,7 @@ const ENTITY_DEFINITIONS: EntityDefinition[] = [
       { name: "status", label: "Status", kind: "select", required: true, options: [{ value: "active", label: "Active" }, { value: "inactive", label: "Inactive" }, { value: "discontinued", label: "Discontinued" }] },
     ],
     updateFields: [
+      { name: "department_id", label: "Department", kind: "select", required: true, sourceEntity: "departments" },
       { name: "name", label: "Name", kind: "text" },
       { name: "credits", label: "Credits", kind: "number", min: 1, max: 20, step: 1, nullable: true },
       { name: "status", label: "Status", kind: "select", options: [{ value: "active", label: "Active" }, { value: "inactive", label: "Inactive" }, { value: "discontinued", label: "Discontinued" }] },
@@ -263,6 +267,7 @@ const ENTITY_DEFINITIONS: EntityDefinition[] = [
       { name: "status", label: "Status", kind: "select", required: true, options: [{ value: "active", label: "Active" }, { value: "graduated", label: "Graduated" }, { value: "archived", label: "Archived" }] },
     ],
     updateFields: [
+      { name: "program_id", label: "Program", kind: "select", required: true, sourceEntity: "programs" },
       { name: "display_name", label: "Display Name", kind: "text" },
       { name: "status", label: "Status", kind: "select", options: [{ value: "active", label: "Active" }, { value: "graduated", label: "Graduated" }, { value: "archived", label: "Archived" }] },
     ],
@@ -284,6 +289,7 @@ const ENTITY_DEFINITIONS: EntityDefinition[] = [
       { name: "status", label: "Status", kind: "select", required: true, options: [{ value: "active", label: "Active" }, { value: "merged", label: "Merged" }, { value: "archived", label: "Archived" }] },
     ],
     updateFields: [
+      { name: "batch_id", label: "Batch", kind: "select", required: true, sourceEntity: "batches" },
       { name: "display_name", label: "Display Name", kind: "text" },
       { name: "max_capacity", label: "Max Capacity", kind: "number", min: 1, max: 500, step: 1, nullable: true },
       { name: "status", label: "Status", kind: "select", options: [{ value: "active", label: "Active" }, { value: "merged", label: "Merged" }, { value: "archived", label: "Archived" }] },
@@ -310,6 +316,7 @@ const ENTITY_DEFINITIONS: EntityDefinition[] = [
       { name: "status", label: "Status", kind: "select", required: true, options: [{ value: "available", label: "Available" }, { value: "maintenance", label: "Maintenance" }, { value: "unavailable", label: "Unavailable" }] },
     ],
     updateFields: [
+      { name: "campus_id", label: "Campus", kind: "select", required: true, sourceEntity: "campuses" },
       { name: "name", label: "Name", kind: "text" },
       { name: "room_type", label: "Room Type", kind: "select", options: [{ value: "classroom", label: "Classroom" }, { value: "lab", label: "Lab" }, { value: "auditorium", label: "Auditorium" }, { value: "seminar", label: "Seminar" }, { value: "virtual", label: "Virtual" }] },
       { name: "capacity", label: "Capacity", kind: "number", min: 1, max: 1000, step: 1, nullable: true },
@@ -380,6 +387,8 @@ const ENTITY_DEFINITIONS: EntityDefinition[] = [
       { name: "status", label: "Status", kind: "select", required: true, options: [{ value: "draft", label: "Draft" }, { value: "active", label: "Active" }, { value: "archived", label: "Archived" }] },
     ],
     updateFields: [
+      { name: "program_id", label: "Program", kind: "select", required: true, sourceEntity: "programs" },
+      { name: "regulation_id", label: "Regulation", kind: "select", required: true, sourceEntity: "regulations" },
       { name: "title", label: "Title", kind: "text" },
       { name: "total_credits", label: "Total Credits", kind: "number", min: 1, max: 400, step: 1, nullable: true },
       { name: "status", label: "Status", kind: "select", options: [{ value: "draft", label: "Draft" }, { value: "active", label: "Active" }, { value: "archived", label: "Archived" }] },
@@ -403,6 +412,8 @@ const ENTITY_DEFINITIONS: EntityDefinition[] = [
       { name: "credits_override", label: "Credits Override", kind: "number", min: 1, max: 20, step: 1, nullable: true },
     ],
     updateFields: [
+      { name: "curriculum_id", label: "Curriculum", kind: "select", required: true, sourceEntity: "curricula" },
+      { name: "subject_id", label: "Subject", kind: "select", required: true, sourceEntity: "subjects" },
       { name: "term_number", label: "Term Number", kind: "number", min: 1, max: 20, step: 1 },
       { name: "is_elective", label: "Is Elective", kind: "checkbox" },
       { name: "credits_override", label: "Credits Override", kind: "number", min: 1, max: 20, step: 1, nullable: true },
@@ -429,6 +440,7 @@ const ENTITY_DEFINITIONS: EntityDefinition[] = [
       { name: "status", label: "Status", kind: "select", required: true, options: [{ value: "planned", label: "Planned" }, { value: "published", label: "Published" }, { value: "cancelled", label: "Cancelled" }] },
     ],
     updateFields: [
+      { name: "academic_year_id", label: "Academic Year", kind: "select", required: true, sourceEntity: "academicYears" },
       { name: "term_id", label: "Term", kind: "select", sourceEntity: "terms", nullable: true },
       { name: "name", label: "Name", kind: "text" },
       { name: "event_type", label: "Event Type", kind: "select", options: [{ value: "instructional", label: "Instructional" }, { value: "exam", label: "Exam" }, { value: "holiday", label: "Holiday" }, { value: "deadline", label: "Deadline" }, { value: "other", label: "Other" }] },
@@ -685,6 +697,7 @@ function buildPayload(fields: FieldDefinition[], form: FormState): Record<string
 
 /** Render the dedicated Academic Masters module with complete entity coverage. */
 export default function AcademicMasters() {
+  const [canManage, setCanManage] = useState(false);
   const [activeEntity, setActiveEntity] = useState<AcademicEntityKey>("campuses");
   const [overview, setOverview] = useState<AcademicsOverview | null>(null);
   const [recordsByEntity, setRecordsByEntity] = useState<EntityDataState>({});
@@ -692,12 +705,21 @@ export default function AcademicMasters() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [dialogMode, setDialogMode] = useState<"create" | "edit">("create");
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editorMode, setEditorMode] = useState<"create" | "edit">("create");
   const [editingRecord, setEditingRecord] = useState<ApiRecord | null>(null);
   const [form, setForm] = useState<FormState>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const editorHeadingRef = useRef<HTMLHeadingElement>(null);
+
+  useEffect(() => {
+    let active = true;
+    void getCurrentActor().then((actor) => {
+      if (active) setCanManage(actor.permissions.includes("academics.settings.manage"));
+    });
+    return () => { active = false; };
+  }, []);
 
   const entityDefinition = useMemo(() => getEntityDefinition(activeEntity), [activeEntity]);
   const rows = useMemo(
@@ -754,39 +776,45 @@ export default function AcademicMasters() {
     void loadEntity(activeEntity);
   }, [activeEntity]);
 
-  /** Open the create dialog with defaults and loaded parent selectors. */
-  async function openCreateDialog(): Promise<void> {
+  useEffect(() => {
+    if (editorOpen) {
+      editorHeadingRef.current?.focus();
+    }
+  }, [editorOpen]);
+
+  /** Open the create workspace with defaults and loaded parent selectors. */
+  async function openCreateEditor(): Promise<void> {
     try {
       setError(null);
       await ensureDependencies(entityDefinition.createFields);
-      setDialogMode("create");
+      setEditorMode("create");
       setEditingRecord(null);
       setForm(createFormState(entityDefinition.createFields, "create"));
       setFormError(null);
-      setDialogOpen(true);
+      setEditorOpen(true);
     } catch (dependencyError) {
       setError(getApiErrorMessage(dependencyError));
     }
   }
 
-  /** Open the edit dialog with existing values and loaded parent selectors. */
-  async function openEditDialog(record: ApiRecord): Promise<void> {
+  /** Open the edit workspace with existing values and loaded parent selectors. */
+  async function openEditEditor(record: ApiRecord): Promise<void> {
     try {
       setError(null);
       await ensureDependencies(entityDefinition.updateFields);
-      setDialogMode("edit");
+      setEditorMode("edit");
       setEditingRecord(record);
       setForm(buildEditFormState(entityDefinition.updateFields, record));
       setFormError(null);
-      setDialogOpen(true);
+      setEditorOpen(true);
     } catch (dependencyError) {
       setError(getApiErrorMessage(dependencyError));
     }
   }
 
-  /** Close the create or edit dialog and reset transient errors. */
-  function closeDialog(): void {
-    setDialogOpen(false);
+  /** Return to the entity list and reset transient editor errors. */
+  function closeEditor(): void {
+    setEditorOpen(false);
     setFormError(null);
   }
 
@@ -799,9 +827,9 @@ export default function AcademicMasters() {
   }
 
   /** Submit create or update payload and refresh the active list on success. */
-  async function submitDialog(event: React.SubmitEvent<HTMLFormElement>): Promise<void> {
+  async function submitEditor(event: React.SubmitEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
-    const fields = dialogMode === "create" ? entityDefinition.createFields : entityDefinition.updateFields;
+    const fields = editorMode === "create" ? entityDefinition.createFields : entityDefinition.updateFields;
     const validationError = validateForm(fields, form);
     if (validationError) {
       setFormError(validationError);
@@ -813,14 +841,14 @@ export default function AcademicMasters() {
       setFormError(null);
       setMessage(null);
       const payload = buildPayload(fields, form);
-      if (dialogMode === "create") {
+      if (editorMode === "create") {
         await createAcademicEntity(activeEntity, payload as never);
         setMessage(`${entityDefinition.label} record created.`);
       } else if (editingRecord) {
         await updateAcademicEntity(activeEntity, editingRecord.id, payload as never);
         setMessage(`${entityDefinition.label} record updated.`);
       }
-      closeDialog();
+      closeEditor();
       await loadEntity(activeEntity);
     } catch (submitError) {
       setFormError(getApiErrorMessage(submitError));
@@ -846,11 +874,11 @@ export default function AcademicMasters() {
   }
 
   const activeTotal = totalsByEntity[activeEntity] ?? 0;
-  const fields = dialogMode === "create" ? entityDefinition.createFields : entityDefinition.updateFields;
+  const fields = editorMode === "create" ? entityDefinition.createFields : entityDefinition.updateFields;
   let submitLabel = "Update";
   if (saving) {
     submitLabel = "Saving...";
-  } else if (dialogMode === "create") {
+  } else if (editorMode === "create") {
     submitLabel = "Create";
   }
 
@@ -868,7 +896,7 @@ export default function AcademicMasters() {
               {entityDefinition.columns.map((column) => (
                 <th key={column.key} scope="col">{column.label}</th>
               ))}
-              <th scope="col">Actions</th>
+              {canManage && <th scope="col">Actions</th>}
             </tr>
           </thead>
           <tbody>
@@ -877,9 +905,7 @@ export default function AcademicMasters() {
                 {entityDefinition.columns.map((column) => (
                   <td key={column.key}>{resolveDisplayValue(column, row, recordsByEntity)}</td>
                 ))}
-                <td>
-                  <button type="button" className="ghost" onClick={() => void openEditDialog(row)}>Edit</button>
-                </td>
+                {canManage && <td><button type="button" className="ghost" onClick={() => void openEditEditor(row)}>Edit</button></td>}
               </tr>
             ))}
           </tbody>
@@ -898,7 +924,7 @@ export default function AcademicMasters() {
         </div>
       </section>
 
-      {overview && (
+      {!editorOpen && overview && (
         <section className="masters-overview" aria-label="Academic overview totals">
           <article><span>Campuses</span><strong>{overview.campuses}</strong></article>
           <article><span>Years</span><strong>{overview.academic_years}</strong></article>
@@ -909,54 +935,56 @@ export default function AcademicMasters() {
         </section>
       )}
 
-      <section className="masters-segment" aria-label="Academic entity selector">
-        {ENTITY_DEFINITIONS.map((definition) => (
-          <button
-            key={definition.key}
-            type="button"
-            className={definition.key === activeEntity ? "active" : ""}
-            onClick={() => setActiveEntity(definition.key)}
-            aria-pressed={definition.key === activeEntity}
-          >
-            {definition.label}
-          </button>
-        ))}
-      </section>
+      {!editorOpen && (
+        <section className="masters-segment" aria-label="Academic entity selector">
+          {ENTITY_DEFINITIONS.map((definition) => (
+            <button
+              key={definition.key}
+              type="button"
+              className={definition.key === activeEntity ? "active" : ""}
+              onClick={() => setActiveEntity(definition.key)}
+              aria-pressed={definition.key === activeEntity}
+            >
+              {definition.label}
+            </button>
+          ))}
+        </section>
+      )}
 
-      {message && <output className="masters-message" aria-live="polite">{message}</output>}
-      {error && <p className="masters-error" role="alert">{error}</p>}
+      {!editorOpen && message && <output className="masters-message" aria-live="polite">{message}</output>}
+      {!editorOpen && error && <p className="masters-error" role="alert">{error}</p>}
 
-      <section className="masters-panel">
-        <header>
-          <div>
-            <h2>{entityDefinition.label}</h2>
-            <span>{activeTotal} records</span>
-          </div>
-          <div className="masters-actions">
-            <button type="button" className="ghost" onClick={() => void loadEntity(activeEntity)}>Retry</button>
-            <button type="button" className="primary-action" onClick={() => void openCreateDialog()}>Add New</button>
-          </div>
-        </header>
+      {!editorOpen ? (
+        <section className="masters-panel">
+          <header>
+            <div>
+              <h2>{entityDefinition.label}</h2>
+              <span>{activeTotal} records</span>
+            </div>
+            <div className="masters-actions">
+              <button type="button" className="ghost" onClick={() => void loadEntity(activeEntity)}>Retry</button>
+              {canManage && <button type="button" className="primary-action" onClick={() => void openCreateEditor()}>Add New</button>}
+            </div>
+          </header>
 
-        {tableBody}
-      </section>
-
-      {dialogOpen && (
-        <div className="modal-backdrop">
-          <dialog className="modal-panel" open aria-labelledby="academic-masters-dialog-title">
+          {tableBody}
+        </section>
+      ) : (
+        <section className="masters-editor" aria-labelledby="academic-masters-editor-title">
+          <article>
             <header>
               <div>
-                <p>{dialogMode === "create" ? "CREATE" : "EDIT"} RECORD</p>
-                <h2 id="academic-masters-dialog-title">{entityDefinition.label}</h2>
+                <p>{editorMode === "create" ? "CREATE" : "EDIT"} RECORD</p>
+                <h2 id="academic-masters-editor-title" ref={editorHeadingRef} tabIndex={-1}>{entityDefinition.label}</h2>
               </div>
-              <button type="button" className="ghost" onClick={closeDialog} aria-label="Close academic masters dialog">
-                Close
+              <button type="button" className="ghost" onClick={closeEditor} aria-label={`Back to ${entityDefinition.label} list`}>
+                Back
               </button>
             </header>
-            <form className="master-form" onSubmit={(event) => void submitDialog(event)}>
+            <form className="master-form" onSubmit={(event) => void submitEditor(event)}>
               <div className="form-grid">
                 {fields.map((field) => {
-                  const value = form[field.name] ?? getDefaultFieldValue(field, dialogMode);
+                  const value = form[field.name] ?? getDefaultFieldValue(field, editorMode);
                   const options = getOptions(field);
                   if (field.kind === "checkbox") {
                     return (
@@ -1009,12 +1037,12 @@ export default function AcademicMasters() {
               {formError && <p className="form-error" role="alert">{formError}</p>}
 
               <footer>
-                <button type="button" className="ghost" onClick={closeDialog}>Cancel</button>
+                <button type="button" className="ghost" onClick={closeEditor}>Cancel</button>
                 <button type="submit" className="primary-action" disabled={saving}>{submitLabel}</button>
               </footer>
             </form>
-          </dialog>
-        </div>
+          </article>
+        </section>
       )}
     </div>
   );

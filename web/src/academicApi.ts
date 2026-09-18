@@ -219,7 +219,9 @@ export type TermCreate = Pick<
 >;
 
 /** Represent one term update payload. */
-export type TermUpdate = Partial<Pick<TermSummary, "display_name" | "starts_on" | "ends_on" | "status">>;
+export type TermUpdate = Partial<
+  Pick<TermSummary, "academic_year_id" | "display_name" | "starts_on" | "ends_on" | "status">
+>;
 
 /** Represent one department create payload. */
 export type DepartmentCreate = Pick<DepartmentSummary, "code" | "name" | "status">;
@@ -235,7 +237,7 @@ export type ProgramCreate = Pick<
 
 /** Represent one program update payload. */
 export type ProgramUpdate = Partial<
-  Pick<ProgramSummary, "name" | "degree_level" | "duration_years" | "status">
+  Pick<ProgramSummary, "department_id" | "name" | "degree_level" | "duration_years" | "status">
 >;
 
 /** Represent one subject create payload. */
@@ -245,13 +247,15 @@ export type SubjectCreate = Pick<
 >;
 
 /** Represent one subject update payload. */
-export type SubjectUpdate = Partial<Pick<SubjectSummary, "name" | "credits" | "status">>;
+export type SubjectUpdate = Partial<
+  Pick<SubjectSummary, "department_id" | "name" | "credits" | "status">
+>;
 
 /** Represent one batch create payload. */
 export type BatchCreate = Pick<BatchSummary, "program_id" | "admission_year" | "display_name" | "status">;
 
 /** Represent one batch update payload. */
-export type BatchUpdate = Partial<Pick<BatchSummary, "display_name" | "status">>;
+export type BatchUpdate = Partial<Pick<BatchSummary, "program_id" | "display_name" | "status">>;
 
 /** Represent one section create payload. */
 export type SectionCreate = Pick<
@@ -260,7 +264,9 @@ export type SectionCreate = Pick<
 >;
 
 /** Represent one section update payload. */
-export type SectionUpdate = Partial<Pick<SectionSummary, "display_name" | "max_capacity" | "status">>;
+export type SectionUpdate = Partial<
+  Pick<SectionSummary, "batch_id" | "display_name" | "max_capacity" | "status">
+>;
 
 /** Represent one room create payload. */
 export type RoomCreate = Pick<
@@ -279,7 +285,7 @@ export type RoomCreate = Pick<
 export type RoomUpdate = Partial<
   Pick<
     RoomSummary,
-    "name" | "room_type" | "capacity" | "has_projector" | "has_computers" | "status"
+    "campus_id" | "name" | "room_type" | "capacity" | "has_projector" | "has_computers" | "status"
   >
 >;
 
@@ -312,7 +318,9 @@ export type CurriculumCreate = Pick<
 >;
 
 /** Represent one curriculum update payload. */
-export type CurriculumUpdate = Partial<Pick<CurriculumSummary, "title" | "total_credits" | "status">>;
+export type CurriculumUpdate = Partial<
+  Pick<CurriculumSummary, "program_id" | "regulation_id" | "title" | "total_credits" | "status">
+>;
 
 /** Represent one curriculum-subject create payload. */
 export type CurriculumSubjectCreate = Pick<
@@ -322,7 +330,10 @@ export type CurriculumSubjectCreate = Pick<
 
 /** Represent one curriculum-subject update payload. */
 export type CurriculumSubjectUpdate = Partial<
-  Pick<CurriculumSubjectSummary, "term_number" | "is_elective" | "credits_override">
+  Pick<
+    CurriculumSubjectSummary,
+    "curriculum_id" | "subject_id" | "term_number" | "is_elective" | "credits_override"
+  >
 >;
 
 /** Represent one calendar event create payload. */
@@ -342,7 +353,14 @@ export type CalendarEventCreate = Pick<
 export type CalendarEventUpdate = Partial<
   Pick<
     CalendarEventSummary,
-    "term_id" | "name" | "event_type" | "starts_on" | "ends_on" | "is_holiday" | "status"
+    | "academic_year_id"
+    | "term_id"
+    | "name"
+    | "event_type"
+    | "starts_on"
+    | "ends_on"
+    | "is_holiday"
+    | "status"
   >
 >;
 

@@ -4,17 +4,25 @@
 
 ### Operational College Management Foundation
 
-Status: Core closures and Student Lifecycle Expansion implemented locally; remaining slices and release hardening are planned sequentially
+Status: Core closures plus Slices 1 through 4 are implemented locally; Slice 5 provider execution and later release hardening remain
 
 The production FastAPI path, PostgreSQL schema, forced tenant RLS, authenticated College Administrator workspace, and nine requested operational areas are implemented locally. This is a repository and local-validation statement, not an AWS deployment claim.
+
+An AWS stakeholder-demo plan is prepared in `docs/12-aws-demo-deployment-plan.md`. The existing
+deployment script and Nginx file are frontend-only prototypes and are not yet an approved full-stack
+release path. No AWS deployment, provisioning, DNS change, database migration, or service restart
+has been performed for this CMS.
 
 ## Implemented
 
 - React and TypeScript frontend scaffolded with Vite.
 - Responsive CMS application shell with desktop sidebar and mobile drawer.
+- Opaque in-workspace create, edit, detail, and document screens replace every portal popup,
+  native dialog, and translucent overlay; Back or Cancel restores the owning workspace.
 - Grouped college navigation using Lucide icons.
 - Authenticated synthetic College Administrator identities for INDUS ARTS & SCIENCE INTERNATIONAL COLLEGE and INDUS LAW COLLEGE.
-- College-specific, source-backed administrator dashboards and branding accents.
+- College-specific source-backed management and role dashboards with operational briefs,
+  role-colored metric links, priority queues, quick access, and responsive layouts.
 - Three visual themes built with shared CSS variables.
 - Stable frontend routes for the implemented administrator workspaces.
 - FastAPI backend scaffold with CORS and a live health endpoint.
@@ -110,46 +118,57 @@ The production FastAPI path, PostgreSQL schema, forced tenant RLS, authenticated
 - Admissions: enquiries, campaigns, applicants, applications, documents, verification, seat pools,
   offers, controlled lifecycle transitions, atomic seat allocation, append-only history, and
   idempotent accepted-applicant conversion. The College Administrator has source-backed creation,
-  review, capacity, transition, and conversion screens for this staff workflow. An authenticated
-  Applicant portal provides membership-bound profile editing, validated private uploads,
-  submission, status tracking, and own-document downloads.
+  review, capacity, transition, private-document download, and conversion screens for this staff
+  workflow. An authenticated Applicant portal provides membership-bound profile editing,
+  validated private uploads, submission, status tracking, and own-document downloads.
 - Students and guardians: people, students, guardians, links, enrollment, placement, lifecycle
   history, documents, subject registrations, progression, transfer/readmission requests, and
   certificate requests. The searchable administrator profile exposes reviewed lifecycle
-  transitions, while Student-own and Guardian-linked reads remain permission scoped.
+  transitions, while Student-own, Guardian-linked, HOD Department, and Class Advisor Section reads
+  remain permission and record scoped. Issued certificate requests have branded printable
+  documents available through the Student My records route.
 - Faculty and delivery: canonical-person faculty profiles, department postings, offerings,
   allocations, derived workload, timetable conflict detection, class-session generation,
   substitutions, lesson plans, learning materials, and syllabus progress. These operations are
-  source-backed in the College Administrator workspace.
+  source-backed in the College Administrator workspace. HOD reads and mutations are constrained to
+  assigned Department offerings, Faculty, timetable, and delivery records.
 - Attendance and leave: attendance records, register locking, correction approval/rejection, and
   leave review workflows. The College Administrator workspace supports attendance entry,
   correction and leave creation/review, before/after correction outcomes, and source-derived
-  percentage, threshold, shortage, and examination-eligibility presentation.
+  percentage, threshold, shortage, and examination-eligibility presentation. Class Advisor and HOD
+  attendance records, corrections, leave, sessions, Students, and summaries are server scoped.
 - Fees and payments: fee-head and plan configuration, enrollment-linked invoices, idempotent
   allocated payments, receipts, compensating reversals, concession/refund request and approval,
   cashier close variance, gateway reconciliation, and derived student ledgers. The complete College
-  Administrator collection workflow is source-backed in the UI.
+  Administrator and Accountant collection workflows are source-backed in the UI. Payment receipt
+  documents derive tenant branding, Student identity, payment facts, and invoice allocations from
+  authoritative records; Student and Guardian access remains linked-record scoped.
 - Examinations and results: schemes, versioned grade rules, sessions, schedules, eligibility,
   capacity-aware seating, invigilation, marks entry/verification/locking, reviewed adjustments,
   reproducible versioned publication, GPA/CGPA, hall-ticket sources, result detail, reopening,
-  republishing, and transcripts. Controller operations are source-backed in the UI.
+  republishing, and transcripts. Controller operations are source-backed in the UI. Immutable
+  issuance metadata and printable hall tickets, grade cards, and result-version-manifest
+  transcripts are available to Controllers and scoped Students.
 - Communications: notice CRUD, server-side audience resolution, scheduling, publication, in-app
   delivery, approval history, durable provider jobs, retry visibility, preferences,
-  acknowledgement, and read state. Eight non-administrator role portals derive navigation and
-  source requests from backend permissions; student, guardian, faculty, and HOD records are
-  constrained by own-record, linked-student, subject-offering, or department scope.
+  acknowledgement, and read state. Nine non-administrator role portals derive navigation and
+  source requests from backend permissions and scopes; read-only users list only delivered notices.
 - Events and activities: club and event setup, publication, eligibility, capacity-safe Student
   self-registration, participant review and attendance, venue/budget approval, teams, expenses,
   achievements, verifiable certificates, and activity points. The complete Activity Coordinator
-  and Student journeys are source-backed and interactively validated locally.
+  and Student journeys are source-backed and interactively validated locally. Active participation
+  certificates now render from the existing serial and attended participation sources.
 - Reporting: management-only source aggregates, inclusive date and academic-year filters,
   calculation freshness and definitions, source drill-down, actor-owned saved views, audited CSV
   exports, recurring delivery configuration, and permission-scoped operational dashboards.
-- Alembic head is `f8cd51ae2d03`; local migration drift checks pass and the production API exposes
-  207 OpenAPI paths.
+- Alembic head is `e2b7c4d91a60`; local migration drift checks pass and the production API exposes
+  219 OpenAPI paths.
 - The frontend uses real APIs for every listed operational route. Academic master configuration is
   comprehensive; role workspaces expose only permission-authorized navigation, source records,
   and actions.
+- Access, Academic Masters, admissions, Students, delivery, attendance, communication, event, and
+  printable-document workflows use normal page flow. Active screens hide their parent list and do
+  not render controls behind a translucent layer.
 
 The college frontend authenticates the two seeded College Administrators through the production
 tenant API, retains access credentials in memory, stores refresh credentials only for the browser
@@ -167,12 +186,14 @@ Platform Administrator tenant-lifecycle workspace are source-backed frontend beh
 - Applicant self-service and shared private Applicant/Student uploads are implemented locally with
   membership binding, magic-byte validation, tenant metadata, authenticated downloads, forced RLS,
   and no-store authorization-aware cache controls. The filesystem provider is development-only;
-  production object storage, retention execution, and malware scanning remain release work. Class
-  Advisor, timetable publication, and selected role-specific academic presentation remain planned.
+  production object storage, retention execution, and malware scanning remain release work.
 - Employee attendance remains part of HR rather than the student class-register workflow.
 - External communication and payment providers, binary uploads, scheduled-report execution,
-  statutory report templates, printable operational documents, and the deferred formal test suite
-  remain release work. Permission-scoped report CSV export is implemented locally.
+  statutory report templates, and the deferred formal test suite remain release work.
+  Permission-scoped report CSV export is implemented locally.
+- Full-stack AWS demo automation remains preparation work: backend artifact installation, isolated
+  systemd service, `/api` proxying, remote migration/onboarding, private media persistence, backup,
+  rollback, and non-destructive public verification must be implemented and reviewed before use.
 
 ## Deferred Testing Decision
 
@@ -190,10 +211,28 @@ production release.
 
 ## Next Review Gate
 
-Follow the one-by-one queue in the authoritative implementation plan. Slice 2, Applicant
-Self-Service and Uploads, passed its PostgreSQL, RLS, API, UI, audit, idempotent two-tenant seed,
-private-media isolation, interactive-validation, and documentation gate locally on 30 August
-2026. The next feature is Slice 3, Academic and Delivery Hardening.
+Follow the one-by-one queue in the authoritative implementation plan. Slice 3, Academic and
+Delivery Hardening, passed locally. Its first increment passed on 16 September 2026:
+Program-to-Department editing succeeds for an unused Program, returns a controlled 409 after any
+direct structural or operational dependency exists, and rejects cross-tenant Department references
+with 422. Subject-to-Department editing now follows the same boundary for curriculum mappings,
+delivery offerings, assessment schemes, and published-result lines. Batch-to-Program editing now
+blocks changes after Section, Student enrollment/progression/lifecycle, or role-scope dependencies
+exist. Section-to-Batch editing blocks changes after subject-offering, Student placement/lifecycle,
+or role-scope dependencies exist. Term-to-Academic-Year, Room-to-Campus, and
+Curriculum-to-Program/Regulation editing now block changes after their delivery, calendar,
+examination, or subject-mapping dependencies exist. Curriculum Subject and Calendar Event parent
+editing provide tenant-safe mapping changes, consistent Academic Year/Term selection, and explicit
+optional-Term clearing. Academic-master dependency editing, scoped HOD controls, and the initial
+Class Advisor workspace are complete. Timetable publication/versioning is complete through
+immutable scoped snapshots at revision `c91e4a7d2b60`. The Student Learning materials route joins
+scoped resources to readable Subject, Section, Term, and Faculty context. Slice 3 is complete.
+Slice 4, Operational Documents, is complete locally. Payment receipts, hall tickets, grade cards,
+transcripts, activity participation certificates, and issued Student-request certificates derive
+from authoritative versioned or immutable records, carry tenant branding and verification
+references, and enforce Student and tenant scope. The next feature is Slice 5, Providers and
+Background Jobs. Its ordered design and validation gate are recorded in
+`docs/modules/19-providers-background-jobs.md`.
 
 The later release gate must cover automated unit, API, permission, RLS, migration, concurrency,
 and browser suites together with fresh-database migration, onboarding idempotency, accessibility,

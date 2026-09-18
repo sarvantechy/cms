@@ -41,10 +41,24 @@ The `/portal/academics` UI exposes 15 API-backed master groups with list and con
 Campus, AcademicYear, Term, Department, Program, Regulation, Curriculum, Subject, Batch, Section, Room, CalendarEvent, and NumberingFormat.
 
 ## Current UI Behavior
-The Academics route reads and mutates PostgreSQL-backed master data for the authenticated tenant. Browser validation covered all 15 groups and a tenant-isolated program creation.
+The Academics route reads and mutates PostgreSQL-backed master data for the authenticated tenant. Browser validation covered all 15 groups and tenant-isolated relationship editing. Every parent-bearing master now exposes its dependencies in Edit: Term to Academic Year, Program and Subject to Department, Batch to Program, Section to Batch, Room to Campus, Curriculum to Program and Regulation, Curriculum Subject to Curriculum and Subject, and Calendar Event to Academic Year and optional Term. Parents with downstream structural, operational, result, or authorization-scope dependencies return a controlled conflict instead of silently changing meaning. Mapping and Calendar parents remain editable because no records depend on those rows; all new parents are tenant validated, Calendar Year/Term pairs must agree, and optional Term can be explicitly cleared.
+
+Create and Edit use an opaque Academic Masters editor screen in normal workspace flow. The editor
+replaces the master list while active and provides an explicit Back action; no popup or translucent
+overlay remains.
+
+## Slice 3 Progress
+
+Academic-master dependency editing and in-use safeguards were completed and locally validated on
+16 September 2026. The Administrator UI successfully reassigned unused records, displayed 409
+validation messages for in-use records, updated both Curriculum Subject parents, changed Calendar
+Year/Term, explicitly cleared an optional Term, and rejected cross-tenant or mismatched parent
+references with 422. Focused Ruff and the frontend production build pass. This completes the
+academic dependency-editing workstream, not the whole Slice 3 scope.
 
 ## Production Completion
-Add richer dependency editing, destructive-change safeguards for records already in use, and scoped HOD workflows. No deployment claim is made.
+Academic dependency editing, scoped HOD academic reads, timetable publication, and richer Student
+learning-material presentation are complete locally. No deployment claim is made.
 
 ## Acceptance Criteria
 - An administrator configures one full academic year without database access.
